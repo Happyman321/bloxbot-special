@@ -1,4 +1,5 @@
 import { getVersion } from "@tauri-apps/api/app";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -58,7 +59,7 @@ const TECHNOLOGIES = [
   },
 ];
 
-type SettingsTab = "providers" | "models" | "about";
+type SettingsTab = "providers" | "models" | "appearance" | "usage" | "about";
 
 interface SettingsProps {
   onClose: () => void;
@@ -156,6 +157,60 @@ function Settings({ onClose }: SettingsProps) {
             App
           </div>
           <button
+            onClick={() => setTab("appearance")}
+            className={`mx-1.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
+              tab === "appearance"
+                ? "bg-accent font-medium text-foreground"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+            }`}
+          >
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v2" />
+              <path d="M12 20v2" />
+              <path d="M4.93 4.93l1.41 1.41" />
+              <path d="M17.66 17.66l1.41 1.41" />
+              <path d="M2 12h2" />
+              <path d="M20 12h2" />
+              <path d="M6.34 17.66l-1.41 1.41" />
+              <path d="M19.07 4.93l-1.41 1.41" />
+            </svg>
+            Appearance
+          </button>
+          <button
+            onClick={() => setTab("usage")}
+            className={`mx-1.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
+              tab === "usage"
+                ? "bg-accent font-medium text-foreground"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+            }`}
+          >
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="12" y1="20" x2="12" y2="10" />
+              <line x1="18" y1="20" x2="18" y2="4" />
+              <line x1="6" y1="20" x2="6" y2="16" />
+            </svg>
+            Usage
+          </button>
+          <button
             onClick={() => setTab("about")}
             className={`mx-1.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
               tab === "about"
@@ -185,7 +240,8 @@ function Settings({ onClose }: SettingsProps) {
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
           {tab === "providers" && <ProvidersTab />}
           {tab === "models" && <ModelsTab />}
-
+          {tab === "appearance" && <AppearanceTab />}
+          {tab === "usage" && <UsageTab />}
           {tab === "about" && <AboutTab appVersion={appVersion} />}
         </div>
       </div>
@@ -891,6 +947,98 @@ function ModelsTab() {
             Connect a provider to see available models.
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function AppearanceTab() {
+  const { theme, toggleTheme } = usePreferences();
+
+  return (
+    <div className="mx-auto w-full max-w-3xl p-5">
+      <h4 className="text-sm font-semibold">Appearance</h4>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Choose how BloxBot looks. Your preference is saved on this device.
+      </p>
+
+      <div className="mt-4 rounded-lg border bg-card p-4">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="text-xs font-medium">Dark mode</div>
+            <div className="mt-1 text-[11px] text-muted-foreground">
+              Switch between a bright and low-light interface.
+            </div>
+          </div>
+          <button
+            onClick={toggleTheme}
+            className="inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium transition-colors hover:bg-accent"
+          >
+            {theme === "dark" ? "Use light mode" : "Use dark mode"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const USAGE_LINKS = [
+  {
+    label: "ChatGPT usage",
+    hint: "View your Codex-heavy ChatGPT usage details.",
+    href: "https://chatgpt.com/#settings/usage",
+  },
+  {
+    label: "OpenAI API usage",
+    hint: "Token and spend history by model and date.",
+    href: "https://platform.openai.com/usage",
+  },
+  {
+    label: "OpenAI billing",
+    hint: "Limits, invoices, and payment settings.",
+    href: "https://platform.openai.com/settings/organization/billing/overview",
+  },
+];
+
+function UsageTab() {
+  async function handleOpen(url: string) {
+    try {
+      await openUrl(url);
+    } catch (error) {
+      console.error("Failed to open usage link:", error);
+      toast.error("Couldn't open usage page");
+    }
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-3xl p-5">
+      <h4 className="text-sm font-semibold">Usage</h4>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Quick links to your ChatGPT/OpenAI usage pages. Bars are shortcuts, not account data.
+      </p>
+
+      <div className="mt-4 space-y-3">
+        {USAGE_LINKS.map((item, index) => (
+          <button
+            key={item.href}
+            onClick={() => handleOpen(item.href)}
+            className="w-full rounded-lg border bg-card p-3 text-left transition-colors hover:bg-accent/40"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-medium">{item.label}</div>
+                <div className="mt-1 text-[11px] text-muted-foreground">{item.hint}</div>
+              </div>
+              <div className="text-[10px] text-muted-foreground">Open ↗</div>
+            </div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-secondary">
+              <div
+                className="h-full rounded-full bg-foreground/70"
+                style={{ width: `${65 - index * 18}%` }}
+              />
+            </div>
+          </button>
+        ))}
       </div>
     </div>
   );

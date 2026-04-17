@@ -1,10 +1,11 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useCreateSession } from "@/hooks/mutations/useCreateSession";
 import { useDeleteSession } from "@/hooks/mutations/useDeleteSession";
 import { useRenameSession } from "@/hooks/mutations/useRenameSession";
 import { useSessionStatuses } from "@/hooks/useSessionStatuses";
 import { useSessions } from "@/hooks/useSessions";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
+import { usePreferences } from "@/providers/PreferencesProvider";
 
 interface ChatSidebarProps {
   collapsed: boolean;
@@ -53,10 +54,21 @@ const ChatSidebar = memo(function ChatSidebar({
   const createSession = useCreateSession();
   const deleteSession = useDeleteSession();
   const renameSession = useRenameSession();
+  const {
+    folders,
+    sessionFolderById,
+    activeWorkspace,
+    setActiveWorkspace,
+    createFolder,
+    assignSessionFolder,
+  } = usePreferences();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [pickerSessionId, setPickerSessionId] = useState<string | null>(null);
+  const [newFolderName, setNewFolderName] = useState("");
   const editRef = useRef<HTMLInputElement>(null);
+  const pickerRef = useRef<HTMLDivElement>(null);
 
   function handleSelect(id: string) {
     onSessionSelect();
@@ -75,6 +87,24 @@ const ChatSidebar = memo(function ChatSidebar({
     }
   }, [editingId]);
 
+  useEffect(() => {
+    if (!pickerSessionId) return;
+    function onClickOutside(event: MouseEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
+        setPickerSessionId(null);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [pickerSessionId]);
+
+  const visibleSessions = useMemo(() => {
+    if (activeWorkspace === "all") return sessions;
+    if (activeWorkspace === "unfiled") {
+      return sessions.filter((session) => !sessionFolderById[session.id]);
+    }
+    return sessions.filter((session) => sessionFolderById[session.id] === activeWorkspace);
+  }, [activeWorkspace, sessionFolderById, sessions]);
 
   function startRename(session: { id: string; title?: string }) {
     setEditingId(session.id);
@@ -86,6 +116,27 @@ const ChatSidebar = memo(function ChatSidebar({
       renameSession.mutate({ sessionID: editingId, title: editValue.trim() });
     }
     setEditingId(null);
+  }
+
+  function handleCreateFolder() {
+    const input = window.prompt("Folder name");
+    if (!input) return;
+    createFolder(input);
+  }
+
+  function moveSession(sessionId: string, folderName: string | null) {
+    assignSessionFolder(sessionId, folderName);
+    setPickerSessionId(null);
+    setNewFolderName("");
+  }
+
+  function handleCreateAndMove(sessionId: string) {
+    const trimmed = newFolderName.trim();
+    if (!trimmed) return;
+    createFolder(trimmed);
+    assignSessionFolder(sessionId, trimmed);
+    setPickerSessionId(null);
+    setNewFolderName("");
   }
 
   return (
@@ -203,17 +254,69 @@ const ChatSidebar = memo(function ChatSidebar({
           </div>
 
           <div className="flex-1 overflow-y-auto overflow-x-hidden py-1">
-            {sessions.length === 0 && (
+            <div className="px-2 pb-2 pt-1">
+              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Folders
+              </div>
+              <div className="flex items-center gap-1">
+                <select
+                  value={activeWorkspace}
+                  onChange={(event) => setActiveWorkspace(event.target.value)}
+                  className="h-7 min-w-0 flex-1 rounded-md border bg-background px-2 text-[11px] outline-none ring-ring focus-visible:ring-1"
+                >
+                  <option value="all">All sessions</option>
+                  <option value="unfiled">Unfiled</option>
+                  {folders.map((folder) => (
+                    <option key={folder} value={folder}>
+                      {folder}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleCreateFolder}
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  title="Create folder"
+                >
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {visibleSessions.length === 0 && (
               <div className="animate-fade-in px-3 py-6 text-center text-xs text-muted-foreground">
-                No sessions yet.
-                <br />
-                Start a new one to begin.
+                {sessions.length === 0 ? (
+                  <>
+                    No sessions yet.
+                    <br />
+                    Start a new one to begin.
+                  </>
+                ) : (
+                  <>
+                    No sessions in this folder.
+                    <br />
+                    Pick another folder or move a chat.
+                  </>
+                )}
               </div>
             )}
-            {sessions.map((session, index) => {
+
+            {visibleSessions.map((session, index) => {
               const isActive = session.id === activeSessionId;
               const isEditing = session.id === editingId;
               const status = sessionStatuses[session.id];
+              const folder = sessionFolderById[session.id];
 
               return (
                 <div
@@ -237,14 +340,14 @@ const ChatSidebar = memo(function ChatSidebar({
                         <input
                           ref={editRef}
                           value={editValue}
-                          onChange={(e) => setEditValue(e.target.value)}
+                          onChange={(event) => setEditValue(event.target.value)}
                           onBlur={commitRename}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") commitRename();
-                            if (e.key === "Escape") setEditingId(null);
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") commitRename();
+                            if (event.key === "Escape") setEditingId(null);
                           }}
                           className="w-full rounded bg-background px-1 text-xs outline-none ring-1 ring-ring"
-                          onClick={(e) => e.stopPropagation()}
+                          onClick={(event) => event.stopPropagation()}
                         />
                       ) : (
                         <div className="truncate text-xs font-medium leading-snug">
@@ -254,6 +357,11 @@ const ChatSidebar = memo(function ChatSidebar({
                       <div className="mt-0.5 text-[10px] text-muted-foreground">
                         {formatTime(session.time.updated)}
                       </div>
+                      {folder && (
+                        <div className="mt-1 inline-flex rounded bg-secondary px-1.5 py-0.5 text-[9px] font-medium text-secondary-foreground">
+                          {folder}
+                        </div>
+                      )}
                     </div>
 
                     {!isEditing && (
@@ -265,8 +373,8 @@ const ChatSidebar = memo(function ChatSidebar({
                         }`}
                       >
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation();
+                          onClick={(event) => {
+                            event.stopPropagation();
                             startRename(session);
                           }}
                           className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
@@ -286,8 +394,30 @@ const ChatSidebar = memo(function ChatSidebar({
                           </svg>
                         </button>
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation();
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setPickerSessionId((prev) => (prev === session.id ? null : session.id));
+                            setNewFolderName("");
+                          }}
+                          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
+                          title="Move to folder"
+                        >
+                          <svg
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation();
                             deleteSession.mutate(session.id);
                           }}
                           className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:text-destructive"
@@ -309,13 +439,60 @@ const ChatSidebar = memo(function ChatSidebar({
                         </button>
                       </div>
                     )}
+
+                    {pickerSessionId === session.id && (
+                      <div
+                        ref={pickerRef}
+                        className="absolute right-2 top-7 z-20 w-44 rounded-md border bg-popover p-2 text-[11px] shadow-lg"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <div className="mb-1 font-medium text-foreground">Move to folder</div>
+                        <div className="max-h-28 space-y-1 overflow-y-auto">
+                          <button
+                            onClick={() => moveSession(session.id, null)}
+                            className="w-full rounded px-1.5 py-1 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                          >
+                            Unfiled
+                          </button>
+                          {folders.map((folderName) => (
+                            <button
+                              key={folderName}
+                              onClick={() => moveSession(session.id, folderName)}
+                              className="w-full rounded px-1.5 py-1 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                            >
+                              {folderName}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="mt-2 flex items-center gap-1">
+                          <input
+                            value={newFolderName}
+                            onChange={(event) => setNewFolderName(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                handleCreateAndMove(session.id);
+                              }
+                            }}
+                            placeholder="New folder"
+                            className="h-7 min-w-0 flex-1 rounded border bg-background px-2 text-[11px] outline-none ring-ring focus-visible:ring-1"
+                          />
+                          <button
+                            onClick={() => handleCreateAndMove(session.id)}
+                            className="h-7 rounded border px-2 text-[10px] font-medium transition-colors hover:bg-accent"
+                          >
+                            Add
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
             })}
           </div>
 
-          <div className="shrink-0 border-t px-3 py-2 space-y-1">
+          <div className="space-y-1 shrink-0 border-t px-3 py-2">
             <button
               onClick={onOpenSettings}
               className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"

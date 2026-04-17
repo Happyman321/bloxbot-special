@@ -11,10 +11,20 @@ interface PreferencesContextValue {
   selectedAgent: string | null;
   selectedVariant: string | null;
   hiddenModels: Set<string>;
+  theme: "light" | "dark";
+  folders: string[];
+  sessionFolderById: Record<string, string>;
+  activeWorkspace: string;
+  folderOpenState: Record<string, boolean>;
   setSelectedModel: (modelID: string) => void;
   setSelectedAgent: (name: string) => void;
   setSelectedVariant: (variant: string | null) => void;
   toggleModelVisibility: (modelKey: string) => void;
+  toggleTheme: () => void;
+  createFolder: (name: string) => void;
+  assignSessionFolder: (sessionId: string, folderName: string | null) => void;
+  setActiveWorkspace: (workspace: string) => void;
+  toggleFolderOpen: (folderKey: string) => void;
 }
 
 export const PreferencesContext = createContext<PreferencesContextValue>(null!);
@@ -33,14 +43,28 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [selectedAgent, setSelectedAgentState] = useState<string | null>(null);
   const [selectedVariant, setSelectedVariantState] = useState<string | null>(null);
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(new Set());
+  const [theme, setThemeState] = useState<"light" | "dark">("light");
+  const [folders, setFolders] = useState<string[]>([]);
+  const [sessionFolderById, setSessionFolderById] = useState<Record<string, string>>({});
+  const [activeWorkspace, setActiveWorkspaceState] = useState("all");
+  const [folderOpenState, setFolderOpenState] = useState<Record<string, boolean>>({});
 
   const connectedProviders = useConnectedProviders();
 
   // Initialize from config data when it arrives
   useEffect(() => {
     if (!configData) return;
-    setHiddenModels(new Set(configData.hiddenModels));
+    setHiddenModels(new Set(configData.hiddenModels ?? []));
+    setThemeState(configData.theme ?? "light");
+    setFolders(configData.folders ?? []);
+    setSessionFolderById(configData.sessionFolderById ?? {});
+    setActiveWorkspaceState(configData.activeWorkspace ?? "all");
+    setFolderOpenState(configData.folderOpenState ?? {});
   }, [configData]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+  }, [theme]);
 
   // Restore last used model if its provider is still connected
   useEffect(() => {
@@ -84,15 +108,72 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const toggleTheme = useCallback(() => {
+    setThemeState((prev) => {
+      const next = prev === "dark" ? "light" : "dark";
+      patchConfig({ theme: next }).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  const createFolder = useCallback((name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setFolders((prev) => {
+      if (prev.some((existing) => existing.toLowerCase() === trimmed.toLowerCase())) {
+        return prev;
+      }
+      const next = [...prev, trimmed];
+      patchConfig({ folders: next }).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  const assignSessionFolder = useCallback((sessionId: string, folderName: string | null) => {
+    setSessionFolderById((prev) => {
+      const next = { ...prev };
+      if (folderName?.trim()) {
+        next[sessionId] = folderName.trim();
+      } else {
+        delete next[sessionId];
+      }
+      patchConfig({ sessionFolderById: next }).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  const setActiveWorkspace = useCallback((workspace: string) => {
+    setActiveWorkspaceState(workspace);
+    patchConfig({ activeWorkspace: workspace }).catch(() => {});
+  }, []);
+
+  const toggleFolderOpen = useCallback((folderKey: string) => {
+    setFolderOpenState((prev) => {
+      const next = { ...prev, [folderKey]: !prev[folderKey] };
+      patchConfig({ folderOpenState: next }).catch(() => {});
+      return next;
+    });
+  }, []);
+
   const value: PreferencesContextValue = {
     selectedModel,
     selectedAgent,
     selectedVariant,
     hiddenModels,
+    theme,
+    folders,
+    sessionFolderById,
+    activeWorkspace,
+    folderOpenState,
     setSelectedModel,
     setSelectedAgent,
     setSelectedVariant,
     toggleModelVisibility,
+    toggleTheme,
+    createFolder,
+    assignSessionFolder,
+    setActiveWorkspace,
+    toggleFolderOpen,
   };
 
   return <PreferencesContext.Provider value={value}>{children}</PreferencesContext.Provider>;
