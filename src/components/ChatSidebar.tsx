@@ -61,6 +61,8 @@ const ChatSidebar = memo(function ChatSidebar({
     folders,
     sessionFolderById,
     folderOpenState,
+    activeWorkspace,
+    setActiveWorkspace,
     createFolder,
     assignSessionFolder,
     toggleFolderOpen,
@@ -138,14 +140,25 @@ const ChatSidebar = memo(function ChatSidebar({
     [sessions, sessionFolderById],
   );
 
-  const foldersWithSessions = useMemo(
-    () =>
-      folders.map((folder) => ({
-        folder,
+  const folderSections = useMemo(
+    () => [
+      { key: UNFILED_KEY, label: UNFILED_LABEL, sessions: unfiledSessions },
+      ...folders.map((folder) => ({
+        key: folder,
+        label: folder,
         sessions: sessions.filter((session) => sessionFolderById[session.id] === folder),
       })),
-    [folders, sessions, sessionFolderById],
+    ],
+    [folders, sessionFolderById, sessions, unfiledSessions],
   );
+
+  const visibleSections = useMemo(() => {
+    if (activeWorkspace === "all") return folderSections;
+    if (activeWorkspace === "unfiled") {
+      return folderSections.filter((section) => section.key === UNFILED_KEY);
+    }
+    return folderSections.filter((section) => section.key === activeWorkspace);
+  }, [activeWorkspace, folderSections]);
 
   function renderSessionItem(
     session: (typeof sessions)[number],
@@ -328,7 +341,11 @@ const ChatSidebar = memo(function ChatSidebar({
     );
   }
 
-  function renderFolderSection(folderKey: string, label: string, folderSessions: typeof sessions) {
+  function renderFolderSection(
+    folderKey: string,
+    label: string,
+    folderSessions: (typeof sessions),
+  ) {
     const isOpen = folderOpenState[folderKey] ?? folderKey === UNFILED_KEY;
 
     return (
@@ -485,16 +502,31 @@ const ChatSidebar = memo(function ChatSidebar({
 
           <div className="flex-1 overflow-y-auto overflow-x-hidden py-1">
             <div className="px-2 pb-2 pt-1">
-              <div className="mb-1.5 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                <span>Folders</span>
+              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Workspace
+              </div>
+              <div className="flex items-center gap-1">
+                <select
+                  value={activeWorkspace}
+                  onChange={(event) => setActiveWorkspace(event.target.value)}
+                  className="h-7 min-w-0 flex-1 rounded-md border bg-background px-2 text-[11px] outline-none ring-ring focus-visible:ring-1"
+                >
+                  <option value="all">All sessions</option>
+                  <option value="unfiled">Unfiled</option>
+                  {folders.map((folder) => (
+                    <option key={folder} value={folder}>
+                      {folder}
+                    </option>
+                  ))}
+                </select>
                 <button
                   onClick={handleCreateFolder}
-                  className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                   title="Create folder"
                 >
                   <svg
-                    width="11"
-                    height="11"
+                    width="13"
+                    height="13"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -502,8 +534,9 @@ const ChatSidebar = memo(function ChatSidebar({
                     strokeLinecap="round"
                     strokeLinejoin="round"
                   >
-                    <line x1="12" y1="5" x2="12" y2="19" />
-                    <line x1="5" y1="12" x2="19" y2="12" />
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                    <line x1="12" y1="11" x2="12" y2="17" />
+                    <line x1="9" y1="14" x2="15" y2="14" />
                   </svg>
                 </button>
               </div>
@@ -517,9 +550,8 @@ const ChatSidebar = memo(function ChatSidebar({
               </div>
             ) : (
               <div className="space-y-1">
-                {renderFolderSection(UNFILED_KEY, UNFILED_LABEL, unfiledSessions)}
-                {foldersWithSessions.map(({ folder, sessions: folderSessions }) =>
-                  renderFolderSection(folder, folder, folderSessions),
+                {visibleSections.map((section) =>
+                  renderFolderSection(section.key, section.label, section.sessions),
                 )}
               </div>
             )}
