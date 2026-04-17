@@ -15,6 +15,7 @@ interface PreferencesContextValue {
   folders: string[];
   sessionFolderById: Record<string, string>;
   activeWorkspace: string;
+  folderOpenState: Record<string, boolean>;
   setSelectedModel: (modelID: string) => void;
   setSelectedAgent: (name: string) => void;
   setSelectedVariant: (variant: string | null) => void;
@@ -23,6 +24,7 @@ interface PreferencesContextValue {
   createFolder: (name: string) => void;
   assignSessionFolder: (sessionId: string, folderName: string | null) => void;
   setActiveWorkspace: (workspace: string) => void;
+  toggleFolderOpen: (folderKey: string) => void;
 }
 
 export const PreferencesContext = createContext<PreferencesContextValue>(null!);
@@ -45,6 +47,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [folders, setFolders] = useState<string[]>([]);
   const [sessionFolderById, setSessionFolderById] = useState<Record<string, string>>({});
   const [activeWorkspace, setActiveWorkspaceState] = useState("all");
+  const [folderOpenState, setFolderOpenState] = useState<Record<string, boolean>>({});
 
   const connectedProviders = useConnectedProviders();
 
@@ -56,6 +59,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setFolders(configData.folders ?? []);
     setSessionFolderById(configData.sessionFolderById ?? {});
     setActiveWorkspaceState(configData.activeWorkspace ?? "all");
+    setFolderOpenState(configData.folderOpenState ?? {});
   }, [configData]);
 
   useEffect(() => {
@@ -143,6 +147,14 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     patchConfig({ activeWorkspace: workspace }).catch(() => {});
   }, []);
 
+  const toggleFolderOpen = useCallback((folderKey: string) => {
+    setFolderOpenState((prev) => {
+      const next = { ...prev, [folderKey]: !prev[folderKey] };
+      patchConfig({ folderOpenState: next }).catch(() => {});
+      return next;
+    });
+  }, []);
+
   const value: PreferencesContextValue = {
     selectedModel,
     selectedAgent,
@@ -152,6 +164,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     folders,
     sessionFolderById,
     activeWorkspace,
+    folderOpenState,
     setSelectedModel,
     setSelectedAgent,
     setSelectedVariant,
@@ -160,6 +173,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     createFolder,
     assignSessionFolder,
     setActiveWorkspace,
+    toggleFolderOpen,
   };
 
   return <PreferencesContext.Provider value={value}>{children}</PreferencesContext.Provider>;
