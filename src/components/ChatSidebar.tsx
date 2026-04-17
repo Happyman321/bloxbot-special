@@ -1,10 +1,11 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useCreateSession } from "@/hooks/mutations/useCreateSession";
 import { useDeleteSession } from "@/hooks/mutations/useDeleteSession";
 import { useRenameSession } from "@/hooks/mutations/useRenameSession";
 import { useSessionStatuses } from "@/hooks/useSessionStatuses";
 import { useSessions } from "@/hooks/useSessions";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
+import { usePreferences } from "@/providers/PreferencesProvider";
 
 interface ChatSidebarProps {
   collapsed: boolean;
@@ -53,6 +54,14 @@ const ChatSidebar = memo(function ChatSidebar({
   const createSession = useCreateSession();
   const deleteSession = useDeleteSession();
   const renameSession = useRenameSession();
+  const {
+    folders,
+    sessionFolderById,
+    activeWorkspace,
+    setActiveWorkspace,
+    createFolder,
+    assignSessionFolder,
+  } = usePreferences();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -75,6 +84,13 @@ const ChatSidebar = memo(function ChatSidebar({
     }
   }, [editingId]);
 
+  const visibleSessions = useMemo(() => {
+    if (activeWorkspace === "all") return sessions;
+    if (activeWorkspace === "unfiled") {
+      return sessions.filter((session) => !sessionFolderById[session.id]);
+    }
+    return sessions.filter((session) => sessionFolderById[session.id] === activeWorkspace);
+  }, [activeWorkspace, sessionFolderById, sessions]);
 
   function startRename(session: { id: string; title?: string }) {
     setEditingId(session.id);
@@ -86,6 +102,26 @@ const ChatSidebar = memo(function ChatSidebar({
       renameSession.mutate({ sessionID: editingId, title: editValue.trim() });
     }
     setEditingId(null);
+  }
+
+  function handleCreateFolder() {
+    const input = window.prompt("Folder name");
+    if (!input) return;
+    createFolder(input);
+  }
+
+  function handleMoveToFolder(sessionId: string) {
+    const currentFolder = sessionFolderById[sessionId] ?? "";
+    const input = window.prompt(
+      "Move session to folder (leave blank to clear folder)",
+      currentFolder,
+    );
+    if (input === null) return;
+    const nextFolder = input.trim();
+    if (nextFolder && !folders.includes(nextFolder)) {
+      createFolder(nextFolder);
+    }
+    assignSessionFolder(sessionId, nextFolder || null);
   }
 
   return (
@@ -203,17 +239,68 @@ const ChatSidebar = memo(function ChatSidebar({
           </div>
 
           <div className="flex-1 overflow-y-auto overflow-x-hidden py-1">
-            {sessions.length === 0 && (
+            <div className="px-2 pb-2 pt-1">
+              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Workspaces
+              </div>
+              <div className="flex items-center gap-1">
+                <select
+                  value={activeWorkspace}
+                  onChange={(event) => setActiveWorkspace(event.target.value)}
+                  className="h-7 min-w-0 flex-1 rounded-md border bg-background px-2 text-[11px] outline-none ring-ring focus-visible:ring-1"
+                >
+                  <option value="all">All sessions</option>
+                  <option value="unfiled">Unfiled</option>
+                  {folders.map((folder) => (
+                    <option key={folder} value={folder}>
+                      {folder}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleCreateFolder}
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  title="Create folder"
+                >
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                    <line x1="12" y1="11" x2="12" y2="17" />
+                    <line x1="9" y1="14" x2="15" y2="14" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            {visibleSessions.length === 0 && (
               <div className="animate-fade-in px-3 py-6 text-center text-xs text-muted-foreground">
-                No sessions yet.
-                <br />
-                Start a new one to begin.
+                {sessions.length === 0 ? (
+                  <>
+                    No sessions yet.
+                    <br />
+                    Start a new one to begin.
+                  </>
+                ) : (
+                  <>
+                    No sessions in this workspace.
+                    <br />
+                    Pick another workspace or move a session.
+                  </>
+                )}
               </div>
             )}
-            {sessions.map((session, index) => {
+            {visibleSessions.map((session, index) => {
               const isActive = session.id === activeSessionId;
               const isEditing = session.id === editingId;
               const status = sessionStatuses[session.id];
+              const folder = sessionFolderById[session.id];
 
               return (
                 <div
@@ -254,6 +341,11 @@ const ChatSidebar = memo(function ChatSidebar({
                       <div className="mt-0.5 text-[10px] text-muted-foreground">
                         {formatTime(session.time.updated)}
                       </div>
+                      {folder && (
+                        <div className="mt-1 inline-flex rounded bg-secondary px-1.5 py-0.5 text-[9px] font-medium text-secondary-foreground">
+                          {folder}
+                        </div>
+                      )}
                     </div>
 
                     {!isEditing && (
@@ -283,6 +375,27 @@ const ChatSidebar = memo(function ChatSidebar({
                             strokeLinejoin="round"
                           >
                             <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleMoveToFolder(session.id);
+                          }}
+                          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
+                          title="Move to folder"
+                        >
+                          <svg
+                            width="10"
+                            height="10"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                           </svg>
                         </button>
                         <button
