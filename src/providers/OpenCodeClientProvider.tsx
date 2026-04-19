@@ -1,6 +1,6 @@
-import { invoke } from "@tauri-apps/api/core";
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk/v2/client";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { invoke } from "@tauri-apps/api/core";
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import LoadingScreen from "@/components/LoadingScreen";
@@ -62,7 +62,9 @@ export function OpenCodeClientProvider({
         try {
           return await invoke<[number, string]>("get_opencode_info");
         } catch {
-          await new Promise((r) => { retryTimer = setTimeout(r, 1000); });
+          await new Promise((r) => {
+            retryTimer = setTimeout(r, 1000);
+          });
         }
       }
       throw new Error("cancelled");
@@ -80,7 +82,9 @@ export function OpenCodeClientProvider({
         } catch {
           // Connection refused or timeout - keep polling.
         }
-        await new Promise((r) => { retryTimer = setTimeout(r, 1000); });
+        await new Promise((r) => {
+          retryTimer = setTimeout(r, 1000);
+        });
       }
       throw new Error("cancelled");
     }

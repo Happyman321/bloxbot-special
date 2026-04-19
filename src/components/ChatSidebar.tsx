@@ -137,18 +137,6 @@ const ChatSidebar = memo(function ChatSidebar({
     assignSessionFolder(sessionId, trimmed);
     setPickerSessionId(null);
     setNewFolderName("");
-  function handleMoveToFolder(sessionId: string) {
-    const currentFolder = sessionFolderById[sessionId] ?? "";
-    const input = window.prompt(
-      "Move session to folder (leave blank to clear folder)",
-      currentFolder,
-    );
-    if (input === null) return;
-    const nextFolder = input.trim();
-    if (nextFolder && !folders.includes(nextFolder)) {
-      createFolder(nextFolder);
-    }
-    assignSessionFolder(sessionId, nextFolder || null);
   }
 
   return (
@@ -265,10 +253,9 @@ const ChatSidebar = memo(function ChatSidebar({
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto overflow-x-hidden py-1">
+          <div className="relative isolate flex-1 overflow-y-auto overflow-x-hidden py-1">
             <div className="px-2 pb-2 pt-1">
               <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Folders
                 Workspaces
               </div>
               <div className="flex items-center gap-1">
@@ -320,9 +307,6 @@ const ChatSidebar = memo(function ChatSidebar({
                   </>
                 ) : (
                   <>
-                    No sessions in this folder.
-                    <br />
-                    Pick another folder or move a chat.
                     No sessions in this workspace.
                     <br />
                     Pick another workspace or move a session.
@@ -340,7 +324,7 @@ const ChatSidebar = memo(function ChatSidebar({
               return (
                 <div
                   key={session.id}
-                  className="animate-slide-in-left"
+                  className={`animate-slide-in-left ${pickerSessionId === session.id ? "relative z-[90]" : ""}`}
                   style={{ animationDelay: `${index * 30}ms` }}
                 >
                   <div
@@ -417,9 +401,6 @@ const ChatSidebar = memo(function ChatSidebar({
                             event.stopPropagation();
                             setPickerSessionId((prev) => (prev === session.id ? null : session.id));
                             setNewFolderName("");
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleMoveToFolder(session.id);
                           }}
                           className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
                           title="Move to folder"
@@ -440,8 +421,6 @@ const ChatSidebar = memo(function ChatSidebar({
                         <button
                           onClick={(event) => {
                             event.stopPropagation();
-                          onClick={(e) => {
-                            e.stopPropagation();
                             deleteSession.mutate(session.id);
                           }}
                           className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:text-destructive"
@@ -467,7 +446,7 @@ const ChatSidebar = memo(function ChatSidebar({
                     {pickerSessionId === session.id && (
                       <div
                         ref={pickerRef}
-                        className="absolute right-2 top-7 z-20 w-44 rounded-md border bg-popover p-2 text-[11px] shadow-lg"
+                        className="absolute right-2 top-7 z-[100] w-44 rounded-md border bg-popover p-2 text-[11px] shadow-lg"
                         onClick={(event) => event.stopPropagation()}
                       >
                         <div className="mb-1 font-medium text-foreground">Move to folder</div>

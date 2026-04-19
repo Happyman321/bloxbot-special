@@ -11,7 +11,8 @@ export function useSessionStatuses() {
   return useQuery<Record<string, SessionStatus>>({
     queryKey: qk.statuses,
     queryFn: async () => {
-      const res = await client!.session.status({});
+      if (!client) return {};
+      const res = await client.session.status({});
       return res.data ?? {};
     },
     enabled: ready && !!client,
@@ -25,7 +26,8 @@ export function useIsBusy(sessionId: string | null): boolean {
     useQuery<Record<string, SessionStatus>, Error, boolean>({
       queryKey: qk.statuses,
       queryFn: async () => {
-        const res = await client!.session.status({});
+        if (!client) return {};
+        const res = await client.session.status({});
         return res.data ?? {};
       },
       enabled: ready && !!client,
