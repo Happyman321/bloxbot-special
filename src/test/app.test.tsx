@@ -165,10 +165,7 @@ function createQueryClient() {
 }
 
 /** Seed the query cache with the minimum state the app needs to be "ready" */
-function seedReadyState(
-  queryClient: QueryClient,
-  opts: { sessions?: Session[] } = {},
-) {
+function seedReadyState(queryClient: QueryClient, opts: { sessions?: Session[] } = {}) {
   const sessions = opts.sessions ?? [];
 
   queryClient.setQueryData(qk.sessions, sessions);

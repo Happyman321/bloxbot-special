@@ -93,13 +93,13 @@ export function ActiveSessionProvider({
         console.error("Failed to select session:", err);
       }
     },
-    [client, queryClient],
+    [activeSessionIdRef, client, queryClient],
   );
 
   const clearSession = useCallback(() => {
     activeSessionIdRef.current = null;
     setActiveSessionId(null);
-  }, []);
+  }, [activeSessionIdRef]);
 
   const value: ActiveSessionContextValue = {
     activeSessionId,
