@@ -30,7 +30,10 @@ export function useMessageIds(): string[] {
 
   const { data } = useQuery<MessagesCache, Error, string[]>({
     queryKey: activeSessionId ? qk.messages(activeSessionId) : NOOP_KEY,
-    queryFn: () => fetchMessages(client!, activeSessionId!),
+    queryFn: () => {
+      if (!client || !activeSessionId) return EMPTY_CACHE;
+      return fetchMessages(client, activeSessionId);
+    },
     enabled: ready && !!client && !!activeSessionId,
     select: useCallback((d: MessagesCache) => d.messageIds, []),
   });
@@ -43,7 +46,10 @@ export function useMessage(messageId: string): MessageWithParts | undefined {
 
   return useQuery<MessagesCache, Error, MessageWithParts | undefined>({
     queryKey: activeSessionId ? qk.messages(activeSessionId) : NOOP_KEY,
-    queryFn: () => fetchMessages(client!, activeSessionId!),
+    queryFn: () => {
+      if (!client || !activeSessionId) return EMPTY_CACHE;
+      return fetchMessages(client, activeSessionId);
+    },
     enabled: ready && !!client && !!activeSessionId,
     select: useCallback((d: MessagesCache) => d.messagesById[messageId], [messageId]),
   }).data;

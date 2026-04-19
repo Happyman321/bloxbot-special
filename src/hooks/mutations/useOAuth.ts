@@ -1,6 +1,6 @@
 import { usePostHog } from "@posthog/react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 import { qk } from "@/lib/queryKeys";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
