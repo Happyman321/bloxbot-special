@@ -27,10 +27,14 @@ interface PreferencesContextValue {
   toggleFolderOpen: (folderKey: string) => void;
 }
 
-export const PreferencesContext = createContext<PreferencesContextValue>(null!);
+export const PreferencesContext = createContext<PreferencesContextValue | undefined>(undefined);
 
 export function usePreferences() {
-  return useContext(PreferencesContext);
+  const context = useContext(PreferencesContext);
+  if (!context) {
+    throw new Error("usePreferences must be used within PreferencesProvider");
+  }
+  return context;
 }
 
 export function PreferencesProvider({ children }: { children: ReactNode }) {
@@ -69,7 +73,10 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   // Restore last used model if its provider is still connected
   useEffect(() => {
     if (!configData || connectedProviders.length === 0) return;
-    if (configData.lastModel && connectedProviders.includes(splitModelKey(configData.lastModel)[0])) {
+    if (
+      configData.lastModel &&
+      connectedProviders.includes(splitModelKey(configData.lastModel)[0])
+    ) {
       setSelectedModelState(configData.lastModel);
     }
   }, [configData, connectedProviders]);

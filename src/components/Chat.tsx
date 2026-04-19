@@ -53,8 +53,7 @@ function Chat() {
                 What would you like to build?
               </h2>
               <p className="mt-2 max-w-md text-xs text-muted-foreground">
-                Create a new session or pick one from the sidebar to continue where you left
-                off.
+                Create a new session or pick one from the sidebar to continue where you left off.
               </p>
               <button
                 onClick={() => createSession.mutate()}
