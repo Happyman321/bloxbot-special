@@ -16,6 +16,8 @@ interface PreferencesContextValue {
   sessionFolderById: Record<string, string>;
   activeWorkspace: string;
   folderOpenState: Record<string, boolean>;
+  preferredStudioId: string | null;
+  knownStudioIds: string[];
   setSelectedModel: (modelID: string) => void;
   setSelectedAgent: (name: string) => void;
   setSelectedVariant: (variant: string | null) => void;
@@ -25,6 +27,8 @@ interface PreferencesContextValue {
   assignSessionFolder: (sessionId: string, folderName: string | null) => void;
   setActiveWorkspace: (workspace: string) => void;
   toggleFolderOpen: (folderKey: string) => void;
+  setPreferredStudioId: (studioId: string | null) => void;
+  addKnownStudioId: (studioId: string) => void;
 }
 
 export const PreferencesContext = createContext<PreferencesContextValue | undefined>(undefined);
@@ -52,6 +56,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [sessionFolderById, setSessionFolderById] = useState<Record<string, string>>({});
   const [activeWorkspace, setActiveWorkspaceState] = useState("all");
   const [folderOpenState, setFolderOpenState] = useState<Record<string, boolean>>({});
+  const [preferredStudioId, setPreferredStudioIdState] = useState<string | null>(null);
+  const [knownStudioIds, setKnownStudioIds] = useState<string[]>([]);
 
   const connectedProviders = useConnectedProviders();
 
@@ -64,6 +70,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setSessionFolderById(configData.sessionFolderById ?? {});
     setActiveWorkspaceState(configData.activeWorkspace ?? "all");
     setFolderOpenState(configData.folderOpenState ?? {});
+    setPreferredStudioIdState(configData.preferredStudioId ?? null);
+    setKnownStudioIds(configData.knownStudioIds ?? []);
   }, [configData]);
 
   useEffect(() => {
@@ -162,6 +170,24 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const setPreferredStudioId = useCallback((studioId: string | null) => {
+    const normalized = studioId?.trim() || null;
+    setPreferredStudioIdState(normalized);
+    patchConfig({ preferredStudioId: normalized }).catch(() => {});
+  }, []);
+
+  const addKnownStudioId = useCallback((studioId: string) => {
+    const normalized = studioId.trim();
+    if (!normalized) return;
+
+    setKnownStudioIds((prev) => {
+      if (prev.includes(normalized)) return prev;
+      const next = [...prev, normalized].sort((a, b) => a.localeCompare(b));
+      patchConfig({ knownStudioIds: next }).catch(() => {});
+      return next;
+    });
+  }, []);
+
   const value: PreferencesContextValue = {
     selectedModel,
     selectedAgent,
@@ -172,6 +198,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     sessionFolderById,
     activeWorkspace,
     folderOpenState,
+    preferredStudioId,
+    knownStudioIds,
     setSelectedModel,
     setSelectedAgent,
     setSelectedVariant,
@@ -181,6 +209,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     assignSessionFolder,
     setActiveWorkspace,
     toggleFolderOpen,
+    setPreferredStudioId,
+    addKnownStudioId,
   };
 
   return <PreferencesContext.Provider value={value}>{children}</PreferencesContext.Provider>;
