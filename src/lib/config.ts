@@ -8,6 +8,8 @@ export interface AppConfig {
   sessionFolderById: Record<string, string>;
   activeWorkspace: string;
   folderOpenState: Record<string, boolean>;
+  preferredStudioId: string | null;
+  knownStudioIds: string[];
 }
 
 const store = new LazyStore("bloxbot-store.json");
@@ -20,6 +22,8 @@ const DEFAULT_CONFIG: AppConfig = {
   sessionFolderById: {},
   activeWorkspace: "all",
   folderOpenState: {},
+  preferredStudioId: null,
+  knownStudioIds: [],
 };
 
 export async function loadConfig(): Promise<AppConfig> {
@@ -35,6 +39,8 @@ export async function loadConfig(): Promise<AppConfig> {
         activeWorkspace: raw.activeWorkspace ?? "all",
         theme: raw.theme ?? "light",
         folderOpenState: raw.folderOpenState ?? {},
+        preferredStudioId: raw.preferredStudioId ?? null,
+        knownStudioIds: raw.knownStudioIds ?? [],
       };
     }
   } catch {

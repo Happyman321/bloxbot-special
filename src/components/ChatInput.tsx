@@ -230,6 +230,10 @@ function ChatInput() {
     setSelectedModel,
     setSelectedAgent,
     setSelectedVariant,
+    preferredStudioId,
+    knownStudioIds,
+    setPreferredStudioId,
+    addKnownStudioId,
   } = usePreferences();
   const sendMessage = useSendMessage();
 
@@ -249,6 +253,7 @@ function ChatInput() {
   const [lbAnimKey, setLbAnimKey] = useState(0);
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showAgentPicker, setShowAgentPicker] = useState(false);
+  const [showStudioPicker, setShowStudioPicker] = useState(false);
   const [modelSearch, setModelSearch] = useState("");
   const [rejectShake, setRejectShake] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -256,6 +261,7 @@ function ChatInput() {
   const modelSearchRef = useRef<HTMLInputElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
   const agentPickerRef = useRef<HTMLDivElement>(null);
+  const studioPickerRef = useRef<HTMLDivElement>(null);
   const dragCounterRef = useRef(0);
   const rejectTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
@@ -389,12 +395,15 @@ function ChatInput() {
       if (agentPickerRef.current && !agentPickerRef.current.contains(e.target as Node)) {
         setShowAgentPicker(false);
       }
+      if (studioPickerRef.current && !studioPickerRef.current.contains(e.target as Node)) {
+        setShowStudioPicker(false);
+      }
     }
-    if (showModelPicker || showAgentPicker) {
+    if (showModelPicker || showAgentPicker || showStudioPicker) {
       document.addEventListener("mousedown", handleClick);
       return () => document.removeEventListener("mousedown", handleClick);
     }
-  }, [showModelPicker, showAgentPicker]);
+  }, [showModelPicker, showAgentPicker, showStudioPicker]);
 
   const modelsByProvider = useMemo(() => {
     const POPULAR = [
@@ -473,6 +482,17 @@ function ChatInput() {
     ? (selectedModel.split("/").pop() ?? selectedModel)
     : "Select model";
   const agentDisplay = selectedAgent ?? "Default agent";
+
+  const studioDisplay = preferredStudioId ? `Studio ${preferredStudioId}` : "Auto studio";
+
+  function handleAddStudioId() {
+    const entered = window.prompt("Enter Roblox Studio instance ID");
+    const normalized = entered?.trim();
+    if (!normalized) return;
+    addKnownStudioId(normalized);
+    setPreferredStudioId(normalized);
+    setShowStudioPicker(false);
+  }
 
   function statusBadge(status?: string) {
     if (status === "beta")
@@ -668,6 +688,64 @@ function ChatInput() {
             )}
           </div>
         )}
+
+        <div className="relative" ref={studioPickerRef}>
+          <button
+            onClick={() => {
+              setShowStudioPicker(!showStudioPicker);
+              setShowModelPicker(false);
+              setShowAgentPicker(false);
+            }}
+            className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            title="Pick a Roblox Studio instance"
+          >
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <path d="M9 9h6v6H9z" />
+            </svg>
+            {studioDisplay}
+          </button>
+          {showStudioPicker && (
+            <div className="absolute bottom-full left-0 z-50 mb-1 w-56 rounded-lg border bg-popover p-1 shadow-lg">
+              <button
+                onClick={() => {
+                  setPreferredStudioId(null);
+                  setShowStudioPicker(false);
+                }}
+                className={`flex w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors ${preferredStudioId === null ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
+              >
+                Auto-select studio
+              </button>
+              {knownStudioIds.map((studioId) => (
+                <button
+                  key={studioId}
+                  onClick={() => {
+                    setPreferredStudioId(studioId);
+                    setShowStudioPicker(false);
+                  }}
+                  className={`flex w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors ${preferredStudioId === studioId ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
+                >
+                  {studioId}
+                </button>
+              ))}
+              <button
+                onClick={handleAddStudioId}
+                className="mt-1 flex w-full rounded-md border px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                + Add studio ID…
+              </button>
+            </div>
+          )}
+        </div>
 
         {availableVariants.length > 0 && (
           <button

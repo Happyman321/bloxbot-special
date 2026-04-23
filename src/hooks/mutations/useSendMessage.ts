@@ -14,14 +14,23 @@ interface SendMessageInput {
 export function useSendMessage() {
   const { client } = useOpenCodeClient();
   const { activeSessionId } = useActiveSession();
-  const { selectedModel, selectedAgent, selectedVariant } = usePreferences();
+  const { selectedModel, selectedAgent, selectedVariant, preferredStudioId } = usePreferences();
   const posthog = usePostHog();
 
   return useMutation({
     mutationFn: async ({ text, images }: SendMessageInput) => {
       if (!client || !activeSessionId) throw new Error("No client or session");
 
-      const parts: Array<{ type: string; [k: string]: unknown }> = [{ type: "text", text }];
+      const messageText = preferredStudioId
+        ? [
+            `[Studio Target: ${preferredStudioId}] Before running Roblox Studio tools, call set_active_studio with this exact ID and keep it active for this request.`,
+            text,
+          ].join("\n\n")
+        : text;
+
+      const parts: Array<{ type: string; [k: string]: unknown }> = [
+        { type: "text", text: messageText },
+      ];
       if (images) {
         for (const img of images) {
           parts.push({ type: "file", mime: img.mime, url: img.url, filename: img.filename });
