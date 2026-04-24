@@ -3,8 +3,10 @@ import { lazy, Suspense, useCallback, useState } from "react";
 import ChatInput from "@/components/ChatInput";
 import ChatMessages from "@/components/ChatMessages";
 import ChatSidebar from "@/components/ChatSidebar";
+import DiffViewer from "@/components/DiffViewer";
 import LoadingScreen from "@/components/LoadingScreen";
 import { useCreateSession } from "@/hooks/mutations/useCreateSession";
+import { useSessionChanges } from "@/hooks/useSessionChanges";
 import { useIsBusy } from "@/hooks/useSessionStatuses";
 import { useSessions } from "@/hooks/useSessions";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
@@ -24,10 +26,14 @@ function Chat() {
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showChanges, setShowChanges] = useState(false);
+  const sessionChanges = useSessionChanges();
 
   const handleToggleSidebar = useCallback(() => setSidebarCollapsed((c) => !c), []);
   const handleSessionSelect = useCallback(() => setShowSettings(false), []);
   const handleOpenSettings = useCallback(() => setShowSettings(true), []);
+  const handleOpenChanges = useCallback(() => setShowChanges(true), []);
+  const handleCloseChanges = useCallback(() => setShowChanges(false), []);
 
   // Main chat UI
   return (
@@ -78,8 +84,8 @@ function Chat() {
           </div>
         ) : (
           <>
-            <div className="flex h-10 shrink-0 items-center border-b px-4">
-              <div className="flex items-center gap-2">
+            <div className="flex h-10 shrink-0 items-center justify-between border-b px-4">
+              <div className="flex min-w-0 items-center gap-2">
                 <h3 className="truncate text-xs font-semibold">
                   {activeSessionTitle || "Untitled"}
                 </h3>
@@ -90,12 +96,23 @@ function Chat() {
                   </span>
                 )}
               </div>
+
+              <button
+                type="button"
+                onClick={handleOpenChanges}
+                className="rounded-md border px-2.5 py-1 text-[11px] font-medium hover:bg-accent"
+              >
+                Changes
+                <span className="ml-1 text-muted-foreground">({sessionChanges.length})</span>
+              </button>
             </div>
 
             <ChatMessages />
             <ChatInput />
           </>
         )}
+
+        <DiffViewer changes={sessionChanges} open={showChanges} onClose={handleCloseChanges} />
 
         {initError && (
           <div className="shrink-0 border-t border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700">
