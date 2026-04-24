@@ -24,6 +24,22 @@ async function fetchMessages(client: OpencodeClient, sessionID: string): Promise
   return { messageIds, messagesById };
 }
 
+export function useMessagesCache(): MessagesCache {
+  const { activeSessionId } = useActiveSession();
+  const { client, ready } = useOpenCodeClient();
+
+  const { data } = useQuery<MessagesCache>({
+    queryKey: activeSessionId ? qk.messages(activeSessionId) : NOOP_KEY,
+    queryFn: () => {
+      if (!client || !activeSessionId) return EMPTY_CACHE;
+      return fetchMessages(client, activeSessionId);
+    },
+    enabled: ready && !!client && !!activeSessionId,
+  });
+
+  return data ?? EMPTY_CACHE;
+}
+
 export function useMessageIds(): string[] {
   const { activeSessionId } = useActiveSession();
   const { client, ready } = useOpenCodeClient();

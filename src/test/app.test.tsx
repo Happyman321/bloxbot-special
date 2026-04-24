@@ -165,7 +165,10 @@ function createQueryClient() {
 }
 
 /** Seed the query cache with the minimum state the app needs to be "ready" */
-function seedReadyState(queryClient: QueryClient, opts: { sessions?: Session[] } = {}) {
+function seedReadyState(
+  queryClient: QueryClient,
+  opts: { sessions?: Session[]; config?: Record<string, unknown> } = {},
+) {
   const sessions = opts.sessions ?? [];
 
   queryClient.setQueryData(qk.sessions, sessions);
@@ -188,6 +191,14 @@ function seedReadyState(queryClient: QueryClient, opts: { sessions?: Session[] }
   queryClient.setQueryData(qk.config, {
     lastModel: "anthropic/claude-3.5-sonnet",
     hiddenModels: [],
+    folders: [],
+    sessionFolderById: {},
+    activeWorkspace: "all",
+    folderOpenState: {},
+    preferredStudioId: null,
+    knownStudioIds: [],
+    folderInstructionsByName: {},
+    ...(opts.config ?? {}),
   });
 }
 
@@ -228,6 +239,36 @@ describe("User journeys", () => {
     // The chat area for the session should now be visible (textarea)
     await waitFor(() => {
       expect(screen.getByPlaceholderText("Describe what you want to build...")).toBeInTheDocument();
+    });
+  });
+
+  it("auto-assigns a newly created session to the active workspace folder", async () => {
+    const newSession = makeSession("s-folder", "Workspace Session");
+    const client = createClient({
+      create: vi.fn().mockResolvedValue({ data: newSession }),
+      get: vi.fn().mockResolvedValue({ data: newSession }),
+      messages: vi.fn().mockResolvedValue({ data: [] }),
+    });
+    const queryClient = createQueryClient();
+    seedReadyState(queryClient, {
+      config: {
+        folders: ["Project Alpha"],
+        activeWorkspace: "Project Alpha",
+      },
+    });
+
+    render(<TestApp client={client} queryClient={queryClient} />);
+
+    const newSessionBtn = await screen.findByText("New Session");
+    await act(async () => {
+      fireEvent.click(newSessionBtn);
+    });
+
+    expect(client.session.create).toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Workspace Session").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("Project Alpha").length).toBeGreaterThan(0);
     });
   });
 

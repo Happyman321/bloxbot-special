@@ -5,11 +5,13 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { qk } from "@/lib/queryKeys";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
+import { usePreferences } from "@/providers/PreferencesProvider";
 
 export function useCreateSession() {
   const { client } = useOpenCodeClient();
   const queryClient = useQueryClient();
   const { selectSession } = useActiveSession();
+  const { activeWorkspace, assignSessionFolder } = usePreferences();
   const posthog = usePostHog();
 
   return useMutation({
@@ -34,6 +36,10 @@ export function useCreateSession() {
       queryClient.setQueryData(qk.todos(newSession.id), []);
       queryClient.setQueryData(qk.questions, null);
       queryClient.setQueryData(qk.permissions, null);
+
+      if (activeWorkspace !== "all" && activeWorkspace !== "unfiled") {
+        assignSessionFolder(newSession.id, activeWorkspace);
+      }
 
       selectSession(newSession.id);
       posthog.capture("session_created");
