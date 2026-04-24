@@ -27,9 +27,14 @@ const MAX_ATTACHMENTS = 5;
 let attachmentCounter = 0;
 
 function normalizeStudioId(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  return null;
 }
 
 function extractStudioIdsFromValue(value: unknown): string[] {
@@ -514,10 +519,28 @@ function ChatInput() {
     if (!client) return;
     setLoadingStudios(true);
     try {
-      const res = await client.mcp.status({});
-      const mcpServers = res.data ?? {};
-      const studioServerStatus =
+      let res = await client.mcp.status({});
+      let mcpServers = res.data ?? {};
+      let studioServerStatus =
         mcpServers["roblox-studio"] ?? mcpServers.roblox_studio ?? mcpServers.studio;
+
+      if (
+        studioServerStatus &&
+        typeof studioServerStatus === "object" &&
+        "status" in studioServerStatus &&
+        studioServerStatus.status !== "connected"
+      ) {
+        try {
+          await client.mcp.connect({ name: "roblox-studio" });
+          res = await client.mcp.status({});
+          mcpServers = res.data ?? {};
+          studioServerStatus =
+            mcpServers["roblox-studio"] ?? mcpServers.roblox_studio ?? mcpServers.studio;
+        } catch (connectErr) {
+          console.warn("Unable to connect roblox-studio MCP server:", connectErr);
+        }
+      }
+
       const ids = extractStudioIdsFromValue(studioServerStatus);
       setDetectedStudioIds(ids);
       if (ids.length > 0) {

@@ -1,7 +1,9 @@
 import { usePostHog } from "@posthog/react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
+import { qk } from "@/lib/queryKeys";
 import { splitModelKey } from "@/lib/splitModelKey";
+import type { MessagesCache } from "@/lib/sseDispatch";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
@@ -14,6 +16,7 @@ interface SendMessageInput {
 export function useSendMessage() {
   const { client } = useOpenCodeClient();
   const { activeSessionId } = useActiveSession();
+  const queryClient = useQueryClient();
   const {
     selectedModel,
     selectedAgent,
@@ -37,7 +40,10 @@ export function useSendMessage() {
       }
 
       const activeFolder = sessionFolderById[activeSessionId];
-      if (activeFolder) {
+      const cachedMessages = queryClient.getQueryData<MessagesCache>(qk.messages(activeSessionId));
+      const isFirstChatMessage = (cachedMessages?.messageIds.length ?? 0) === 0;
+
+      if (activeFolder && isFirstChatMessage) {
         const folderInstructions = folderInstructionsByName[activeFolder]?.trim();
         if (folderInstructions) {
           messagePrefixes.push(
