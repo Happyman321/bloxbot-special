@@ -227,7 +227,8 @@ async fn do_start(
 
     let mcp_config = serde_json::json!({
         "plugin": [
-            "opencode-gemini-auth@latest"
+            "opencode-gemini-auth@latest",
+            "@guard22/opencode-multi-auth-codex@latest"
         ],
         "mcp": {
             "roblox-studio": {
