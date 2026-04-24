@@ -1,6 +1,7 @@
 import type { PermissionRequest, QuestionRequest, Todo } from "@opencode-ai/sdk/v2/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useCallback, useContext, useState } from "react";
+import { fetchMessages } from "@/hooks/useMessages";
 import { qk } from "@/lib/queryKeys";
 import type { MessagesCache } from "@/lib/sseDispatch";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
@@ -41,27 +42,10 @@ export function ActiveSessionProvider({
       try {
         const [_sessionRes, msgsRes] = await Promise.all([
           client.session.get({ sessionID }),
-          client.session.messages({ sessionID }),
+          fetchMessages(client, sessionID),
         ]);
 
-        if (msgsRes.data) {
-          const byId: Record<
-            string,
-            {
-              info: (typeof msgsRes.data)[number]["info"];
-              parts: (typeof msgsRes.data)[number]["parts"];
-            }
-          > = {};
-          const ids: string[] = [];
-          for (const m of msgsRes.data) {
-            byId[m.info.id] = m;
-            ids.push(m.info.id);
-          }
-          queryClient.setQueryData<MessagesCache>(qk.messages(sessionID), {
-            messageIds: ids,
-            messagesById: byId,
-          });
-        }
+        queryClient.setQueryData<MessagesCache>(qk.messages(sessionID), msgsRes);
 
         // Fetch todos, questions, and permissions in parallel
         const [todoRes, qRes, pRes] = await Promise.allSettled([

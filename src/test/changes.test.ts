@@ -14,7 +14,7 @@ function makeMessage(
 }
 
 describe("buildSessionChanges", () => {
-  it("collapses intermediate updates into final net file change", () => {
+  it("returns only changes from the latest assistant message with edits", () => {
     const messageIds = ["m1", "m2"];
     const messagesById: Record<string, MessageWithParts> = {
       m1: makeMessage({ id: "m1", role: "assistant" }, [
@@ -41,6 +41,29 @@ describe("buildSessionChanges", () => {
     expect(changes).toHaveLength(1);
     expect(changes[0].path).toBe("game/ServerScriptService/Main.server.lua");
     expect(changes[0].after).toBe("print('final')");
+  });
+
+  it("falls back to the most recent assistant message that contains edits", () => {
+    const messageIds = ["m1", "m2"];
+    const messagesById: Record<string, MessageWithParts> = {
+      m1: makeMessage({ id: "m1", role: "assistant" }, [
+        {
+          id: "p1",
+          type: "patch",
+          path: "game/ServerScriptService/Main.server.lua",
+          before: "print('hello')",
+          after: "print('hello world')",
+        },
+      ]),
+      m2: makeMessage(
+        { id: "m2", role: "assistant" },
+        [{ id: "txt", type: "text", text: "Done! No further edits." }],
+      ),
+    };
+
+    const changes = buildSessionChanges(messageIds, messagesById);
+    expect(changes).toHaveLength(1);
+    expect(changes[0].after).toBe("print('hello world')");
   });
 
   it("detects add and delete kinds", () => {

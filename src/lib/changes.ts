@@ -261,12 +261,12 @@ export function buildSessionChanges(
   messageIds: string[],
   messagesById: Record<string, MessageWithParts>,
 ): SessionChange[] {
-  const latestByPath = new Map<string, RawChangeInput>();
-
-  for (const messageId of messageIds) {
+  for (let i = messageIds.length - 1; i >= 0; i -= 1) {
+    const messageId = messageIds[i];
     const message = messagesById[messageId];
     if (!message || message.info.role !== "assistant") continue;
 
+    const latestByPath = new Map<string, RawChangeInput>();
     for (const part of message.parts) {
       const rawChanges = extractRawChanges(part);
       for (const change of rawChanges) {
@@ -278,26 +278,30 @@ export function buildSessionChanges(
         });
       }
     }
+
+    if (latestByPath.size === 0) continue;
+
+    return [...latestByPath.values()]
+      .map((change) => {
+        const before = change.before ?? "";
+        const after = change.after ?? "";
+        const diffLines = computeScriptDiff(before, after);
+        const { linesAdded, linesRemoved } = countDiffLines(diffLines);
+        const kind = inferKind(before, after, change.kind);
+        return {
+          key: `${messageId}:${change.path}:${kind}`,
+          path: change.path,
+          kind,
+          before,
+          after,
+          isScript: isScriptPath(change.path),
+          linesAdded,
+          linesRemoved,
+          diffLines,
+        } satisfies SessionChange;
+      })
+      .sort((a, b) => a.path.localeCompare(b.path));
   }
 
-  return [...latestByPath.values()]
-    .map((change) => {
-      const before = change.before ?? "";
-      const after = change.after ?? "";
-      const diffLines = computeScriptDiff(before, after);
-      const { linesAdded, linesRemoved } = countDiffLines(diffLines);
-      const kind = inferKind(before, after, change.kind);
-      return {
-        key: `${change.path}:${kind}`,
-        path: change.path,
-        kind,
-        before,
-        after,
-        isScript: isScriptPath(change.path),
-        linesAdded,
-        linesRemoved,
-        diffLines,
-      } satisfies SessionChange;
-    })
-    .sort((a, b) => a.path.localeCompare(b.path));
+  return [];
 }
