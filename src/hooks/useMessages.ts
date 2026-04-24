@@ -29,7 +29,10 @@ function toMessagesCache(messages: MessageWithParts[]): MessagesCache {
   return { messageIds, messagesById };
 }
 
-export async function fetchMessages(client: OpencodeClient, sessionID: string): Promise<MessagesCache> {
+export async function fetchMessages(
+  client: OpencodeClient,
+  sessionID: string,
+): Promise<MessagesCache> {
   const allMessages: MessageWithParts[] = [];
   let cursor: string | null = null;
 

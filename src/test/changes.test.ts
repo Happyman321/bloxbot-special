@@ -55,10 +55,9 @@ describe("buildSessionChanges", () => {
           after: "print('hello world')",
         },
       ]),
-      m2: makeMessage(
-        { id: "m2", role: "assistant" },
-        [{ id: "txt", type: "text", text: "Done! No further edits." }],
-      ),
+      m2: makeMessage({ id: "m2", role: "assistant" }, [
+        { id: "txt", type: "text", text: "Done! No further edits." },
+      ]),
     };
 
     const changes = buildSessionChanges(messageIds, messagesById);
