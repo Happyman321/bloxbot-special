@@ -287,6 +287,7 @@ function ChatInput() {
     knownStudioIds,
     setPreferredStudioId,
     addKnownStudioId,
+    fastMode,
   } = usePreferences();
   const sendMessage = useSendMessage();
 
@@ -297,6 +298,26 @@ function ChatInput() {
     const model = allModels.find((m) => m.id === modelId);
     return model?.variants ? Object.keys(model.variants) : [];
   }, [selectedModel, allModels]);
+
+  useEffect(() => {
+    if (!fastMode) {
+      if (selectedVariant === "fast") {
+        setSelectedVariant(null);
+      }
+      return;
+    }
+
+    if (!availableVariants.includes("fast")) {
+      if (selectedVariant === "fast") {
+        setSelectedVariant(null);
+      }
+      return;
+    }
+
+    if (selectedVariant !== "fast") {
+      setSelectedVariant("fast");
+    }
+  }, [fastMode, availableVariants, selectedVariant, setSelectedVariant]);
 
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);

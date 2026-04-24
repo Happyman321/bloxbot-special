@@ -11,6 +11,7 @@ export interface AppConfig {
   preferredStudioId: string | null;
   knownStudioIds: string[];
   folderInstructionsByName: Record<string, string>;
+  fastMode: boolean;
 }
 
 const store = new LazyStore("bloxbot-store.json");
@@ -26,6 +27,7 @@ const DEFAULT_CONFIG: AppConfig = {
   preferredStudioId: null,
   knownStudioIds: [],
   folderInstructionsByName: {},
+  fastMode: false,
 };
 
 export async function loadConfig(): Promise<AppConfig> {
@@ -44,6 +46,7 @@ export async function loadConfig(): Promise<AppConfig> {
         preferredStudioId: raw.preferredStudioId ?? null,
         knownStudioIds: raw.knownStudioIds ?? [],
         folderInstructionsByName: raw.folderInstructionsByName ?? {},
+        fastMode: raw.fastMode ?? false,
       };
     }
   } catch {

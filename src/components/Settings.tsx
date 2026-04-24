@@ -1006,6 +1006,8 @@ const USAGE_LINKS = [
 ];
 
 function UsageTab() {
+  const { fastMode, toggleFastMode } = usePreferences();
+
   async function handleOpen(url: string) {
     try {
       await openUrl(url);
@@ -1023,6 +1025,23 @@ function UsageTab() {
       </p>
 
       <div className="mt-4 space-y-3">
+        <div className="rounded-lg border bg-card p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-medium">Fast mode (Codex)</div>
+              <div className="mt-1 text-[11px] text-muted-foreground">
+                Prefer Codex fast variant when available for quicker responses.
+              </div>
+            </div>
+            <button
+              onClick={toggleFastMode}
+              className="inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium transition-colors hover:bg-accent"
+            >
+              {fastMode ? "On" : "Off"}
+            </button>
+          </div>
+        </div>
+
         {USAGE_LINKS.map((item, index) => (
           <button
             key={item.href}

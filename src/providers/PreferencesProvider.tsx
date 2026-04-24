@@ -19,6 +19,7 @@ interface PreferencesContextValue {
   preferredStudioId: string | null;
   knownStudioIds: string[];
   folderInstructionsByName: Record<string, string>;
+  fastMode: boolean;
   setSelectedModel: (modelID: string) => void;
   setSelectedAgent: (name: string) => void;
   setSelectedVariant: (variant: string | null) => void;
@@ -31,6 +32,7 @@ interface PreferencesContextValue {
   setPreferredStudioId: (studioId: string | null) => void;
   addKnownStudioId: (studioId: string) => void;
   setFolderInstructions: (folderName: string, instructions: string) => void;
+  toggleFastMode: () => void;
 }
 
 export const PreferencesContext = createContext<PreferencesContextValue | undefined>(undefined);
@@ -63,6 +65,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [folderInstructionsByName, setFolderInstructionsByName] = useState<Record<string, string>>(
     {},
   );
+  const [fastMode, setFastModeState] = useState(false);
 
   const connectedProviders = useConnectedProviders();
 
@@ -78,6 +81,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setPreferredStudioIdState(configData.preferredStudioId ?? null);
     setKnownStudioIds(configData.knownStudioIds ?? []);
     setFolderInstructionsByName(configData.folderInstructionsByName ?? {});
+    setFastModeState(configData.fastMode ?? false);
   }, [configData]);
 
   useEffect(() => {
@@ -213,6 +217,14 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const toggleFastMode = useCallback(() => {
+    setFastModeState((prev) => {
+      const next = !prev;
+      patchConfig({ fastMode: next }).catch(() => {});
+      return next;
+    });
+  }, []);
+
   const value: PreferencesContextValue = {
     selectedModel,
     selectedAgent,
@@ -226,6 +238,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     preferredStudioId,
     knownStudioIds,
     folderInstructionsByName,
+    fastMode,
     setSelectedModel,
     setSelectedAgent,
     setSelectedVariant,
@@ -238,6 +251,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setPreferredStudioId,
     addKnownStudioId,
     setFolderInstructions,
+    toggleFastMode,
   };
 
   return <PreferencesContext.Provider value={value}>{children}</PreferencesContext.Provider>;
