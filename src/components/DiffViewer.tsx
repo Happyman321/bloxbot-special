@@ -133,7 +133,7 @@ function DiffViewer({ changes, open, onClose }: DiffViewerProps) {
         <div className="flex h-12 shrink-0 items-center justify-between border-b px-4">
           <div>
             <div className="text-xs font-semibold">Changes</div>
-            <div className="text-[10px] text-muted-foreground">Final net result only</div>
+            <div className="text-[10px] text-muted-foreground">Latest assistant message only</div>
           </div>
           <button
             type="button"
