@@ -7,6 +7,7 @@ import { useAllModels, useConnectedProviders } from "@/hooks/useProviders";
 import { useIsBusy } from "@/hooks/useSessionStatuses";
 import { splitModelKey } from "@/lib/splitModelKey";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
+import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import type { ModelInfo } from "@/types";
 
@@ -24,6 +25,57 @@ const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
 const MAX_ATTACHMENTS = 5;
 
 let attachmentCounter = 0;
+
+function normalizeStudioId(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+function extractStudioIdsFromValue(value: unknown): string[] {
+  const ids = new Set<string>();
+  const visited = new WeakSet<object>();
+  const keysThatLookLikeStudioId = ["studio_id", "studioid", "id", "instance_id", "instanceid"];
+
+  function walk(node: unknown, contextKey?: string) {
+    if (node === null || node === undefined) return;
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item, contextKey);
+      return;
+    }
+    if (typeof node !== "object") {
+      if (typeof node === "string" && contextKey) {
+        const normalizedKey = contextKey.toLowerCase();
+        if (keysThatLookLikeStudioId.includes(normalizedKey) && normalizedKey.includes("id")) {
+          const studioId = normalizeStudioId(node);
+          if (studioId) ids.add(studioId);
+        }
+      }
+      return;
+    }
+    if (visited.has(node)) return;
+    visited.add(node);
+
+    const obj = node as Record<string, unknown>;
+    const hasStudioHint = Object.keys(obj).some((key) => key.toLowerCase().includes("studio"));
+
+    for (const [key, val] of Object.entries(obj)) {
+      const normalizedKey = key.toLowerCase();
+      const normalizedVal = normalizeStudioId(val);
+      if (
+        normalizedVal &&
+        keysThatLookLikeStudioId.includes(normalizedKey) &&
+        (hasStudioHint || normalizedKey.includes("studio") || normalizedKey.includes("instance"))
+      ) {
+        ids.add(normalizedVal);
+      }
+      walk(val, key);
+    }
+  }
+
+  walk(value);
+  return [...ids];
+}
 
 function fileToDataURL(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -221,6 +273,7 @@ function ChatInput() {
   const connectedProviders = useConnectedProviders();
   const agents = useAgents();
   const { activeSessionId } = useActiveSession();
+  const { client } = useOpenCodeClient();
   const isBusy = useIsBusy(activeSessionId);
   const {
     selectedModel,
@@ -254,6 +307,8 @@ function ChatInput() {
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showAgentPicker, setShowAgentPicker] = useState(false);
   const [showStudioPicker, setShowStudioPicker] = useState(false);
+  const [loadingStudios, setLoadingStudios] = useState(false);
+  const [detectedStudioIds, setDetectedStudioIds] = useState<string[]>([]);
   const [modelSearch, setModelSearch] = useState("");
   const [rejectShake, setRejectShake] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -448,6 +503,37 @@ function ChatInput() {
     () => agents.filter((a) => !a.hidden && (a.mode === "primary" || a.mode === "all")),
     [agents],
   );
+  const availableStudioIds = useMemo(() => {
+    const deduped = new Set<string>();
+    for (const id of detectedStudioIds) deduped.add(id);
+    for (const id of knownStudioIds) deduped.add(id);
+    return [...deduped];
+  }, [detectedStudioIds, knownStudioIds]);
+
+  const refreshStudios = useCallback(async () => {
+    if (!client) return;
+    setLoadingStudios(true);
+    try {
+      const res = await client.mcp.status({});
+      const mcpServers = res.data ?? {};
+      const studioServerStatus =
+        mcpServers["roblox-studio"] ?? mcpServers.roblox_studio ?? mcpServers.studio;
+      const ids = extractStudioIdsFromValue(studioServerStatus);
+      setDetectedStudioIds(ids);
+      if (ids.length > 0) {
+        for (const id of ids) addKnownStudioId(id);
+      }
+    } catch (err) {
+      console.error("Failed to detect Roblox Studio sessions:", err);
+    } finally {
+      setLoadingStudios(false);
+    }
+  }, [addKnownStudioId, client]);
+
+  useEffect(() => {
+    if (!showStudioPicker) return;
+    refreshStudios();
+  }, [refreshStudios, showStudioPicker]);
 
   function handleSubmit() {
     const trimmed = text.trim();
@@ -725,7 +811,7 @@ function ChatInput() {
               >
                 Auto-select studio
               </button>
-              {knownStudioIds.map((studioId) => (
+              {availableStudioIds.map((studioId) => (
                 <button
                   key={studioId}
                   onClick={() => {
@@ -737,11 +823,25 @@ function ChatInput() {
                   {studioId}
                 </button>
               ))}
+              {availableStudioIds.length === 0 && (
+                <div className="px-2 py-2 text-xs text-muted-foreground">
+                  {loadingStudios
+                    ? "Looking for active Studio sessions…"
+                    : "No active Studio sessions detected yet."}
+                </div>
+              )}
+              <button
+                onClick={refreshStudios}
+                disabled={loadingStudios}
+                className="mt-1 flex w-full rounded-md border px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loadingStudios ? "Refreshing…" : "Refresh Studio list"}
+              </button>
               <button
                 onClick={handleAddStudioId}
                 className="mt-1 flex w-full rounded-md border px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               >
-                + Add studio ID…
+                + Enter Studio ID manually…
               </button>
             </div>
           )}
