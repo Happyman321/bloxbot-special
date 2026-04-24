@@ -9,6 +9,7 @@ import { usePreferences } from "@/providers/PreferencesProvider";
 interface SendMessageInput {
   text: string;
   images?: Array<{ mime: string; url: string; filename?: string }>;
+  preferFastVariant?: boolean;
 }
 
 export function useSendMessage() {
@@ -25,7 +26,7 @@ export function useSendMessage() {
   const posthog = usePostHog();
 
   return useMutation({
-    mutationFn: async ({ text, images }: SendMessageInput) => {
+    mutationFn: async ({ text, images, preferFastVariant }: SendMessageInput) => {
       if (!client || !activeSessionId) throw new Error("No client or session");
 
       const messagePrefixes: string[] = [];
@@ -71,6 +72,7 @@ export function useSendMessage() {
 
       if (selectedAgent) opts.agent = selectedAgent;
       if (selectedVariant) opts.variant = selectedVariant;
+      else if (preferFastVariant) opts.variant = "fast";
 
       await client.session.promptAsync(opts as Parameters<typeof client.session.promptAsync>[0]);
       posthog.capture("message_sent", {

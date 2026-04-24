@@ -298,26 +298,7 @@ function ChatInput() {
     const model = allModels.find((m) => m.id === modelId);
     return model?.variants ? Object.keys(model.variants) : [];
   }, [selectedModel, allModels]);
-
-  useEffect(() => {
-    if (!fastMode) {
-      if (selectedVariant === "fast") {
-        setSelectedVariant(null);
-      }
-      return;
-    }
-
-    if (!availableVariants.includes("fast")) {
-      if (selectedVariant === "fast") {
-        setSelectedVariant(null);
-      }
-      return;
-    }
-
-    if (selectedVariant !== "fast") {
-      setSelectedVariant("fast");
-    }
-  }, [fastMode, availableVariants, selectedVariant, setSelectedVariant]);
+  const canAutoUseFastVariant = fastMode && availableVariants.includes("fast");
 
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
@@ -564,7 +545,11 @@ function ChatInput() {
       attachments.length > 0
         ? attachments.map((a) => ({ mime: a.mime, url: a.dataUrl, filename: a.filename }))
         : undefined;
-    sendMessage.mutate({ text: trimmed || " ", images });
+    sendMessage.mutate({
+      text: trimmed || " ",
+      images,
+      preferFastVariant: canAutoUseFastVariant,
+    });
     setText("");
     setAttachments([]);
     if (textareaRef.current) textareaRef.current.style.height = "auto";
@@ -881,7 +866,7 @@ function ChatInput() {
             className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] capitalize text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             title={`Click to cycle variant (${["default", ...availableVariants].join(" → ")})`}
           >
-            {selectedVariant ?? "default"}
+            {selectedVariant ?? (canAutoUseFastVariant ? "fast (auto)" : "default")}
           </button>
         )}
       </div>
