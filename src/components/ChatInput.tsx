@@ -41,6 +41,24 @@ function extractStudioIdsFromValue(value: unknown): string[] {
   const ids = new Set<string>();
   const visited = new WeakSet<object>();
   const keysThatLookLikeStudioId = ["studio_id", "studioid", "id", "instance_id", "instanceid"];
+  const uuidPattern =
+    /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
+
+  function addIdsFromText(text: string, contextKey?: string) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    const fromContext = contextKey?.toLowerCase() ?? "";
+    const hasStudioContext = fromContext.includes("studio") || fromContext.includes("instance");
+    const hasStudioHintInText = trimmed.toLowerCase().includes("studio");
+
+    if (!hasStudioContext && !hasStudioHintInText) return;
+
+    for (const match of trimmed.matchAll(uuidPattern)) {
+      const studioId = normalizeStudioId(match[0]);
+      if (studioId) ids.add(studioId);
+    }
+  }
 
   function walk(node: unknown, contextKey?: string) {
     if (node === null || node === undefined) return;
@@ -49,12 +67,15 @@ function extractStudioIdsFromValue(value: unknown): string[] {
       return;
     }
     if (typeof node !== "object") {
-      if (typeof node === "string" && contextKey) {
-        const normalizedKey = contextKey.toLowerCase();
-        if (keysThatLookLikeStudioId.includes(normalizedKey) && normalizedKey.includes("id")) {
-          const studioId = normalizeStudioId(node);
-          if (studioId) ids.add(studioId);
+      if (typeof node === "string") {
+        if (contextKey) {
+          const normalizedKey = contextKey.toLowerCase();
+          if (keysThatLookLikeStudioId.includes(normalizedKey) && normalizedKey.includes("id")) {
+            const studioId = normalizeStudioId(node);
+            if (studioId) ids.add(studioId);
+          }
         }
+        addIdsFromText(node, contextKey);
       }
       return;
     }

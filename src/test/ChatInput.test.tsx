@@ -453,4 +453,26 @@ describe("ChatInput", () => {
       expect(screen.getByText("12345")).toBeInTheDocument();
     });
   });
+
+  it("detects studio IDs embedded in MCP status messages", async () => {
+    const studioId = "2a19ebf2-6510-4a5e-be92-3e8c2e2fce62";
+    const client = createClient();
+    client.mcp.status = vi.fn().mockResolvedValue({
+      data: {
+        "roblox-studio": {
+          status: "connected",
+          note: `Active studio set to Tha Blox (${studioId})`,
+        },
+      },
+    });
+    const qc = createQueryClient();
+
+    render(<TestChatInput client={client} queryClient={qc} />);
+
+    fireEvent.click(await screen.findByTitle("Pick a Roblox Studio instance"));
+
+    await waitFor(() => {
+      expect(screen.getByText(studioId)).toBeInTheDocument();
+    });
+  });
 });
