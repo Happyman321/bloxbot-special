@@ -70,7 +70,11 @@ function createClient(overrides: Record<string, unknown> = {}) {
     permission: { list: vi.fn().mockResolvedValue({ data: [] }), reply: vi.fn() },
     event: { subscribe: vi.fn().mockResolvedValue({ stream: null }) },
     app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
-    mcp: { connect: vi.fn(), disconnect: vi.fn() },
+    mcp: {
+      status: vi.fn().mockResolvedValue({ data: {} }),
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+    },
     instance: { dispose: vi.fn() },
   };
 }
@@ -81,7 +85,14 @@ function createQueryClient() {
   });
 }
 
-function seedState(qc: QueryClient, session: Session) {
+function seedState(
+  qc: QueryClient,
+  session: Session,
+  overrides?: {
+    config?: Record<string, unknown>;
+    messages?: MessagesCache;
+  },
+) {
   qc.setQueryData(qk.sessions, [session]);
   qc.setQueryData(qk.statuses, {});
   qc.setQueryData(qk.agents, []);
@@ -100,8 +111,14 @@ function seedState(qc: QueryClient, session: Session) {
   qc.setQueryData(qk.config, {
     lastModel: "anthropic/claude-3.5-sonnet",
     hiddenModels: [],
+    sessionFolderById: {},
+    folderInstructionsByName: {},
+    ...(overrides?.config ?? {}),
   });
-  qc.setQueryData<MessagesCache>(qk.messages(session.id), { messageIds: [], messagesById: {} });
+  qc.setQueryData<MessagesCache>(
+    qk.messages(session.id),
+    overrides?.messages ?? { messageIds: [], messagesById: {} },
+  );
   qc.setQueryData(qk.todos(session.id), []);
   qc.setQueryData(qk.questions, null);
   qc.setQueryData(qk.permissions, null);
@@ -116,15 +133,20 @@ function TestChatInput({
   queryClient,
   sessionId = "s1",
   clientStatus = "ready",
+  seedOverrides,
 }: {
   client: ReturnType<typeof createClient>;
   queryClient: QueryClient;
   sessionId?: string;
   clientStatus?: string;
+  seedOverrides?: {
+    config?: Record<string, unknown>;
+    messages?: MessagesCache;
+  };
 }) {
   const activeSessionIdRef = useRef<string | null>(sessionId);
   const session = makeSession(sessionId, "Test Session");
-  seedState(queryClient, session);
+  seedState(queryClient, session, seedOverrides);
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -282,6 +304,66 @@ describe("ChatInput", () => {
     expect(client.session.promptAsync).not.toHaveBeenCalled();
   });
 
+  it("injects workspace instructions on the first message in a chat", async () => {
+    const client = createClient();
+    const qc = createQueryClient();
+
+    render(
+      <TestChatInput
+        client={client}
+        queryClient={qc}
+        seedOverrides={{
+          config: {
+            sessionFolderById: { s1: "my-workspace" },
+            folderInstructionsByName: { "my-workspace": "Always use strict typing." },
+          },
+        }}
+      />,
+    );
+
+    const textarea = await screen.findByPlaceholderText("Describe what you want to build...");
+    await act(async () => {
+      fireEvent.change(textarea, { target: { value: "Build a leaderboard" } });
+      fireEvent.click(screen.getByTitle("Send"));
+    });
+
+    const args = client.session.promptAsync.mock.calls[0][0];
+    expect(args.parts[0].text).toContain("[Workspace Instructions: my-workspace]");
+    expect(args.parts[0].text).toContain("Always use strict typing.");
+    expect(args.parts[0].text).toContain("Build a leaderboard");
+  });
+
+  it("does not inject workspace instructions after the first message", async () => {
+    const client = createClient();
+    const qc = createQueryClient();
+
+    render(
+      <TestChatInput
+        client={client}
+        queryClient={qc}
+        seedOverrides={{
+          config: {
+            sessionFolderById: { s1: "my-workspace" },
+            folderInstructionsByName: { "my-workspace": "Always use strict typing." },
+          },
+          messages: {
+            messageIds: ["existing-message-id"],
+            messagesById: {},
+          },
+        }}
+      />,
+    );
+
+    const textarea = await screen.findByPlaceholderText("Describe what you want to build...");
+    await act(async () => {
+      fireEvent.change(textarea, { target: { value: "Add badges" } });
+      fireEvent.click(screen.getByTitle("Send"));
+    });
+
+    const args = client.session.promptAsync.mock.calls[0][0];
+    expect(args.parts[0].text).toBe("Add badges");
+  });
+
   it("shows Stop button when session is busy", async () => {
     const client = createClient();
     const qc = createQueryClient();
@@ -349,5 +431,26 @@ describe("ChatInput", () => {
     render(<TestChatInput client={client} queryClient={qc} />);
 
     expect(await screen.findByTitle("Attach images")).toBeInTheDocument();
+  });
+
+  it("detects studio IDs from MCP status and renders them in picker", async () => {
+    const client = createClient();
+    client.mcp.status = vi.fn().mockResolvedValue({
+      data: {
+        "roblox-studio": {
+          status: "connected",
+          studios: [{ studio_id: 12345 }],
+        },
+      },
+    });
+    const qc = createQueryClient();
+
+    render(<TestChatInput client={client} queryClient={qc} />);
+
+    fireEvent.click(await screen.findByTitle("Pick a Roblox Studio instance"));
+
+    await waitFor(() => {
+      expect(screen.getByText("12345")).toBeInTheDocument();
+    });
   });
 });
