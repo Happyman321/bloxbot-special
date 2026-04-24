@@ -18,6 +18,7 @@ interface PreferencesContextValue {
   folderOpenState: Record<string, boolean>;
   preferredStudioId: string | null;
   knownStudioIds: string[];
+  folderInstructionsByName: Record<string, string>;
   setSelectedModel: (modelID: string) => void;
   setSelectedAgent: (name: string) => void;
   setSelectedVariant: (variant: string | null) => void;
@@ -29,6 +30,7 @@ interface PreferencesContextValue {
   toggleFolderOpen: (folderKey: string) => void;
   setPreferredStudioId: (studioId: string | null) => void;
   addKnownStudioId: (studioId: string) => void;
+  setFolderInstructions: (folderName: string, instructions: string) => void;
 }
 
 export const PreferencesContext = createContext<PreferencesContextValue | undefined>(undefined);
@@ -58,6 +60,9 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [folderOpenState, setFolderOpenState] = useState<Record<string, boolean>>({});
   const [preferredStudioId, setPreferredStudioIdState] = useState<string | null>(null);
   const [knownStudioIds, setKnownStudioIds] = useState<string[]>([]);
+  const [folderInstructionsByName, setFolderInstructionsByName] = useState<Record<string, string>>(
+    {},
+  );
 
   const connectedProviders = useConnectedProviders();
 
@@ -72,6 +77,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setFolderOpenState(configData.folderOpenState ?? {});
     setPreferredStudioIdState(configData.preferredStudioId ?? null);
     setKnownStudioIds(configData.knownStudioIds ?? []);
+    setFolderInstructionsByName(configData.folderInstructionsByName ?? {});
   }, [configData]);
 
   useEffect(() => {
@@ -188,6 +194,25 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const setFolderInstructions = useCallback((folderName: string, instructions: string) => {
+    const trimmedFolder = folderName.trim();
+    if (!trimmedFolder) return;
+
+    setFolderInstructionsByName((prev) => {
+      const next = { ...prev };
+      const normalizedInstructions = instructions.trim();
+
+      if (normalizedInstructions) {
+        next[trimmedFolder] = normalizedInstructions;
+      } else {
+        delete next[trimmedFolder];
+      }
+
+      patchConfig({ folderInstructionsByName: next }).catch(() => {});
+      return next;
+    });
+  }, []);
+
   const value: PreferencesContextValue = {
     selectedModel,
     selectedAgent,
@@ -200,6 +225,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     folderOpenState,
     preferredStudioId,
     knownStudioIds,
+    folderInstructionsByName,
     setSelectedModel,
     setSelectedAgent,
     setSelectedVariant,
@@ -211,6 +237,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     toggleFolderOpen,
     setPreferredStudioId,
     addKnownStudioId,
+    setFolderInstructions,
   };
 
   return <PreferencesContext.Provider value={value}>{children}</PreferencesContext.Provider>;

@@ -61,12 +61,15 @@ const ChatSidebar = memo(function ChatSidebar({
     setActiveWorkspace,
     createFolder,
     assignSessionFolder,
+    folderInstructionsByName,
+    setFolderInstructions,
   } = usePreferences();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [pickerSessionId, setPickerSessionId] = useState<string | null>(null);
   const [newFolderName, setNewFolderName] = useState("");
+  const [workspaceInstructionDraft, setWorkspaceInstructionDraft] = useState("");
   const editRef = useRef<HTMLInputElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
 
@@ -97,6 +100,15 @@ const ChatSidebar = memo(function ChatSidebar({
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, [pickerSessionId]);
+
+  useEffect(() => {
+    if (activeWorkspace === "all" || activeWorkspace === "unfiled") {
+      setWorkspaceInstructionDraft("");
+      return;
+    }
+
+    setWorkspaceInstructionDraft(folderInstructionsByName[activeWorkspace] ?? "");
+  }, [activeWorkspace, folderInstructionsByName]);
 
   const visibleSessions = useMemo(() => {
     if (activeWorkspace === "all") return sessions;
@@ -137,6 +149,11 @@ const ChatSidebar = memo(function ChatSidebar({
     assignSessionFolder(sessionId, trimmed);
     setPickerSessionId(null);
     setNewFolderName("");
+  }
+
+  function saveWorkspaceInstructions() {
+    if (activeWorkspace === "all" || activeWorkspace === "unfiled") return;
+    setFolderInstructions(activeWorkspace, workspaceInstructionDraft);
   }
 
   return (
@@ -295,6 +312,27 @@ const ChatSidebar = memo(function ChatSidebar({
                   </svg>
                 </button>
               </div>
+              {activeWorkspace !== "all" && activeWorkspace !== "unfiled" && (
+                <div className="mt-2 rounded-md border bg-background/60 p-2">
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Workspace instructions
+                  </div>
+                  <textarea
+                    value={workspaceInstructionDraft}
+                    onChange={(event) => setWorkspaceInstructionDraft(event.target.value)}
+                    placeholder="Project context / pre-instructions for this workspace"
+                    className="min-h-20 w-full resize-y rounded border bg-background px-2 py-1.5 text-[11px] outline-none ring-ring focus-visible:ring-1"
+                  />
+                  <div className="mt-1 flex justify-end">
+                    <button
+                      onClick={saveWorkspaceInstructions}
+                      className="h-7 rounded border px-2 text-[10px] font-medium transition-colors hover:bg-accent"
+                    >
+                      Save instructions
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {visibleSessions.length === 0 && (

@@ -14,19 +14,40 @@ interface SendMessageInput {
 export function useSendMessage() {
   const { client } = useOpenCodeClient();
   const { activeSessionId } = useActiveSession();
-  const { selectedModel, selectedAgent, selectedVariant, preferredStudioId } = usePreferences();
+  const {
+    selectedModel,
+    selectedAgent,
+    selectedVariant,
+    preferredStudioId,
+    sessionFolderById,
+    folderInstructionsByName,
+  } = usePreferences();
   const posthog = usePostHog();
 
   return useMutation({
     mutationFn: async ({ text, images }: SendMessageInput) => {
       if (!client || !activeSessionId) throw new Error("No client or session");
 
-      const messageText = preferredStudioId
-        ? [
-            `[Studio Target: ${preferredStudioId}] Before running Roblox Studio tools, call set_active_studio with this exact ID and keep it active for this request.`,
-            text,
-          ].join("\n\n")
-        : text;
+      const messagePrefixes: string[] = [];
+
+      if (preferredStudioId) {
+        messagePrefixes.push(
+          `[Studio Target: ${preferredStudioId}] Before running Roblox Studio tools, call set_active_studio with this exact ID and keep it active for this request.`,
+        );
+      }
+
+      const activeFolder = sessionFolderById[activeSessionId];
+      if (activeFolder) {
+        const folderInstructions = folderInstructionsByName[activeFolder]?.trim();
+        if (folderInstructions) {
+          messagePrefixes.push(
+            `[Workspace Instructions: ${activeFolder}] Follow these project-specific instructions for this request:\n${folderInstructions}`,
+          );
+        }
+      }
+
+      const messageText =
+        messagePrefixes.length > 0 ? [...messagePrefixes, text].join("\n\n") : text;
 
       const parts: Array<{ type: string; [k: string]: unknown }> = [
         { type: "text", text: messageText },
