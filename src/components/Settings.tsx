@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -12,6 +13,8 @@ import {
   useAuthMethods,
   useConnectedProviders,
 } from "@/hooks/useProviders";
+import { qk } from "@/lib/queryKeys";
+import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import type { ModelInfo, ProviderInfo } from "@/types";
 
@@ -266,6 +269,8 @@ type ConnectDialogState =
   | { step: "apikey"; provider: ProviderInfo };
 
 function ProvidersTab() {
+  const queryClient = useQueryClient();
+  const { client } = useOpenCodeClient();
   const allProviders = useAllProviders();
   const connectedProviders = useConnectedProviders();
   const authMethods = useAuthMethods();
@@ -280,6 +285,8 @@ function ProvidersTab() {
   const [oauthCodeInput, setOauthCodeInput] = useState("");
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshingModels, setRefreshingModels] = useState(false);
+  const [restartingApp, setRestartingApp] = useState(false);
 
   const oauthAbortRef = useRef<AbortController | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -449,6 +456,53 @@ function ProvidersTab() {
     }
   }
 
+  async function handleRefreshModels() {
+    if (!client) {
+      toast.error("OpenCode is not connected yet");
+      return;
+    }
+
+    setRefreshingModels(true);
+    try {
+      const [providerRes, authRes] = await Promise.all([
+        client.provider.list({}),
+        client.provider.auth({}).catch(() => ({ data: undefined })),
+      ]);
+
+      if (providerRes.data) {
+        const nextProviderData = authRes.data
+          ? { ...providerRes.data, authMethods: authRes.data }
+          : providerRes.data;
+        queryClient.setQueryData(qk.providers, nextProviderData);
+      } else {
+        queryClient.invalidateQueries({ queryKey: qk.providers });
+      }
+
+      toast.success("Model list refreshed");
+    } catch (err) {
+      console.error("[providers] Failed to refresh models:", err);
+      toast.error("Could not refresh models");
+    } finally {
+      setRefreshingModels(false);
+    }
+  }
+
+  async function handleClearCacheAndReload() {
+    setRestartingApp(true);
+
+    try {
+      queryClient.removeQueries({ queryKey: qk.providers });
+      queryClient.removeQueries({ queryKey: qk.statuses });
+      queryClient.removeQueries({ queryKey: qk.agents });
+      toast.success("Cache cleared. Restarting app...");
+      await relaunch();
+    } catch (err) {
+      console.error("[providers] Failed to restart app:", err);
+      toast.error("Failed to restart app");
+      setRestartingApp(false);
+    }
+  }
+
   // Split providers into connected and unconnected
   const connected = allProviders.filter((p) => connectedProviders.includes(p.id));
   const unconnected = allProviders.filter((p) => !connectedProviders.includes(p.id));
@@ -475,6 +529,30 @@ function ProvidersTab() {
       <p className="mt-1 text-xs text-muted-foreground">
         Connect AI providers to use their models.
       </p>
+
+      <div className="mt-4 rounded-lg border bg-card p-3">
+        <div className="text-[11px] font-medium">Missing a model?</div>
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          Refresh the provider model catalog, or clear temporary cache and restart the app. Your
+          chats are preserved.
+        </p>
+        <div className="mt-2 flex items-center gap-2">
+          <button
+            onClick={handleRefreshModels}
+            disabled={refreshingModels || restartingApp}
+            className="rounded-md border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent disabled:opacity-50"
+          >
+            {refreshingModels ? "Refreshing..." : "Refresh model list"}
+          </button>
+          <button
+            onClick={handleClearCacheAndReload}
+            disabled={restartingApp || refreshingModels}
+            className="rounded-md border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent disabled:opacity-50"
+          >
+            {restartingApp ? "Restarting..." : "Clear cache & reload app"}
+          </button>
+        </div>
+      </div>
 
       {/* Connected providers */}
       {connected.length > 0 && (
