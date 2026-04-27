@@ -475,4 +475,51 @@ describe("ChatInput", () => {
       expect(screen.getByText(studioId)).toBeInTheDocument();
     });
   });
+
+  it("extracts studio IDs from instances collections", async () => {
+    const client = createClient();
+    client.mcp.status = vi.fn().mockResolvedValue({
+      data: {
+        "roblox-studio": {
+          status: "connected",
+          instances: [{ id: 67890 }],
+        },
+      },
+    });
+    const qc = createQueryClient();
+
+    render(<TestChatInput client={client} queryClient={qc} />);
+
+    fireEvent.click(await screen.findByTitle("Pick a Roblox Studio instance"));
+
+    await waitFor(() => {
+      expect(screen.getByText("67890")).toBeInTheDocument();
+    });
+  });
+
+  it("attempts to connect roblox-studio when status payload is missing", async () => {
+    const client = createClient();
+    client.mcp.status = vi
+      .fn()
+      .mockResolvedValueOnce({ data: {} })
+      .mockResolvedValueOnce({
+        data: {
+          "roblox-studio": {
+            status: "connected",
+            studios: [{ studio_id: 13579 }],
+          },
+        },
+      });
+    client.mcp.connect = vi.fn().mockResolvedValue({});
+    const qc = createQueryClient();
+
+    render(<TestChatInput client={client} queryClient={qc} />);
+
+    fireEvent.click(await screen.findByTitle("Pick a Roblox Studio instance"));
+
+    await waitFor(() => {
+      expect(client.mcp.connect).toHaveBeenCalledWith({ name: "roblox-studio" });
+      expect(screen.getByText("13579")).toBeInTheDocument();
+    });
+  });
 });

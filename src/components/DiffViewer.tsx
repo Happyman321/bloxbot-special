@@ -109,7 +109,7 @@ const PlainDiffView = memo(function PlainDiffView({ change }: { change: SessionC
 
 function DiffViewer({ changes, open, onClose }: DiffViewerProps) {
   const [query, setQuery] = useState("");
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -117,7 +117,7 @@ function DiffViewer({ changes, open, onClose }: DiffViewerProps) {
     return changes.filter((c) => c.path.toLowerCase().includes(needle));
   }, [changes, query]);
 
-  const selected = filtered.find((c) => c.path === selectedPath) ?? filtered[0] ?? null;
+  const selected = filtered.find((c) => c.key === selectedKey) ?? filtered[0] ?? null;
 
   if (!open) return null;
 
@@ -133,7 +133,7 @@ function DiffViewer({ changes, open, onClose }: DiffViewerProps) {
         <div className="flex h-12 shrink-0 items-center justify-between border-b px-4">
           <div>
             <div className="text-xs font-semibold">Changes</div>
-            <div className="text-[10px] text-muted-foreground">Latest assistant message only</div>
+            <div className="text-[10px] text-muted-foreground">Session change history</div>
           </div>
           <button
             type="button"
@@ -163,12 +163,12 @@ function DiffViewer({ changes, open, onClose }: DiffViewerProps) {
                 </div>
               ) : (
                 filtered.map((change) => {
-                  const active = selected?.path === change.path;
+                  const active = selected?.key === change.key;
                   return (
                     <button
                       key={change.key}
                       type="button"
-                      onClick={() => setSelectedPath(change.path)}
+                      onClick={() => setSelectedKey(change.key)}
                       className={`mb-1 w-full rounded-md border px-2 py-1.5 text-left transition-colors ${
                         active
                           ? "border-blue-300 bg-blue-50"
@@ -183,6 +183,11 @@ function DiffViewer({ changes, open, onClose }: DiffViewerProps) {
                         <KindPill kind={change.kind} />
                         <DiffStats change={change} />
                       </div>
+                      {change.sourceMessageCreatedAt && (
+                        <div className="mt-1 text-[10px] text-muted-foreground">
+                          {new Date(change.sourceMessageCreatedAt).toLocaleString()}
+                        </div>
+                      )}
                     </button>
                   );
                 })
