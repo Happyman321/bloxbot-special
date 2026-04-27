@@ -1,4 +1,4 @@
-import type { Part } from "@opencode-ai/sdk/v2/client";
+import type { FileDiff, Part } from "@opencode-ai/sdk/v2/client";
 
 import type { MessageWithParts } from "@/types";
 
@@ -21,6 +21,8 @@ export interface SessionChange {
   linesAdded: number;
   linesRemoved: number;
   diffLines: ScriptDiffLine[];
+  sourceMessageId?: string;
+  sourceMessageCreatedAt?: number;
 }
 
 interface RawChangeInput {
@@ -28,6 +30,8 @@ interface RawChangeInput {
   before?: string;
   after?: string;
   kind?: ChangeKind;
+  sourceMessageId?: string;
+  sourceMessageCreatedAt?: number;
 }
 
 const SCRIPT_EXTENSIONS = new Set([
@@ -257,6 +261,28 @@ function extractRawChanges(part: Part): RawChangeInput[] {
   return [];
 }
 
+function toSessionChange(change: RawChangeInput, defaultKeyPrefix: string): SessionChange {
+  const before = change.before ?? "";
+  const after = change.after ?? "";
+  const diffLines = computeScriptDiff(before, after);
+  const { linesAdded, linesRemoved } = countDiffLines(diffLines);
+  const kind = inferKind(before, after, change.kind);
+
+  return {
+    key: `${defaultKeyPrefix}:${change.path}:${kind}`,
+    path: change.path,
+    kind,
+    before,
+    after,
+    isScript: isScriptPath(change.path),
+    linesAdded,
+    linesRemoved,
+    diffLines,
+    sourceMessageId: change.sourceMessageId,
+    sourceMessageCreatedAt: change.sourceMessageCreatedAt,
+  } satisfies SessionChange;
+}
+
 export function buildSessionChanges(
   messageIds: string[],
   messagesById: Record<string, MessageWithParts>,
@@ -275,6 +301,8 @@ export function buildSessionChanges(
         latestByPath.set(path, {
           ...change,
           path,
+          sourceMessageId: messageId,
+          sourceMessageCreatedAt: message.info.time?.created,
         });
       }
     }
@@ -282,26 +310,41 @@ export function buildSessionChanges(
     if (latestByPath.size === 0) continue;
 
     return [...latestByPath.values()]
-      .map((change) => {
-        const before = change.before ?? "";
-        const after = change.after ?? "";
-        const diffLines = computeScriptDiff(before, after);
-        const { linesAdded, linesRemoved } = countDiffLines(diffLines);
-        const kind = inferKind(before, after, change.kind);
-        return {
-          key: `${messageId}:${change.path}:${kind}`,
-          path: change.path,
-          kind,
-          before,
-          after,
-          isScript: isScriptPath(change.path),
-          linesAdded,
-          linesRemoved,
-          diffLines,
-        } satisfies SessionChange;
-      })
+      .map((change) => toSessionChange(change, messageId))
       .sort((a, b) => a.path.localeCompare(b.path));
   }
 
   return [];
+}
+
+export function buildSessionChangesFromDiffs(
+  diffsByMessage: Array<{ messageId: string; createdAt?: number; diffs: FileDiff[] }>,
+): SessionChange[] {
+  const all: SessionChange[] = [];
+
+  for (const item of diffsByMessage) {
+    for (const diff of item.diffs) {
+      const path = normalizePath(diff.file);
+      if (!path) continue;
+      all.push(
+        toSessionChange(
+          {
+            path,
+            before: diff.before,
+            after: diff.after,
+            sourceMessageId: item.messageId,
+            sourceMessageCreatedAt: item.createdAt,
+          },
+          item.messageId,
+        ),
+      );
+    }
+  }
+
+  return all.sort((a, b) => {
+    const aTime = a.sourceMessageCreatedAt ?? 0;
+    const bTime = b.sourceMessageCreatedAt ?? 0;
+    if (aTime !== bTime) return bTime - aTime;
+    return a.path.localeCompare(b.path);
+  });
 }

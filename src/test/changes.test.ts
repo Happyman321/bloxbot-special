@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildSessionChanges } from "@/lib/changes";
+import { buildSessionChanges, buildSessionChangesFromDiffs } from "@/lib/changes";
 import type { MessageWithParts } from "@/types";
 
 function makeMessage(
@@ -108,5 +108,41 @@ describe("buildSessionChanges", () => {
     expect(changes[0].path).toBe("ReplicatedStorage/Config.lua");
     expect(changes[0].isScript).toBe(true);
     expect(changes[0].linesAdded).toBeGreaterThan(0);
+  });
+
+  it("builds change history from session diff API responses", () => {
+    const changes = buildSessionChangesFromDiffs([
+      {
+        messageId: "u1",
+        createdAt: 100,
+        diffs: [
+          {
+            file: "game/ServerScriptService/Main.server.lua",
+            before: "print(1)",
+            after: "print(2)",
+            additions: 1,
+            deletions: 1,
+          },
+        ],
+      },
+      {
+        messageId: "u2",
+        createdAt: 200,
+        diffs: [
+          {
+            file: "game/ReplicatedStorage/Config.lua",
+            before: "return false",
+            after: "return true",
+            additions: 1,
+            deletions: 1,
+          },
+        ],
+      },
+    ]);
+
+    expect(changes).toHaveLength(2);
+    expect(changes[0].path).toBe("game/ReplicatedStorage/Config.lua");
+    expect(changes[0].sourceMessageId).toBe("u2");
+    expect(changes[1].sourceMessageId).toBe("u1");
   });
 });

@@ -37,12 +37,22 @@ function normalizeStudioId(value: unknown): string | null {
   return null;
 }
 
+function maybeParseJsonText(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 function extractStudioIdsFromValue(value: unknown): string[] {
   const ids = new Set<string>();
   const visited = new WeakSet<object>();
   const keysThatLookLikeStudioId = ["studio_id", "studioid", "id", "instance_id", "instanceid"];
+  const collectionKeys = ["studios", "studio_sessions", "sessions", "instances"];
   const uuidPattern =
     /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
+  const numericIdPattern = /\b\d{4,}\b/g;
 
   function addIdsFromText(text: string, contextKey?: string) {
     const trimmed = text.trim();
@@ -52,9 +62,19 @@ function extractStudioIdsFromValue(value: unknown): string[] {
     const hasStudioContext = fromContext.includes("studio") || fromContext.includes("instance");
     const hasStudioHintInText = trimmed.toLowerCase().includes("studio");
 
-    if (!hasStudioContext && !hasStudioHintInText) return;
+    if (!hasStudioContext && !hasStudioHintInText) {
+      const parsed = maybeParseJsonText(trimmed);
+      if (parsed !== null) {
+        walk(parsed, contextKey);
+      }
+      return;
+    }
 
     for (const match of trimmed.matchAll(uuidPattern)) {
+      const studioId = normalizeStudioId(match[0]);
+      if (studioId) ids.add(studioId);
+    }
+    for (const match of trimmed.matchAll(numericIdPattern)) {
       const studioId = normalizeStudioId(match[0]);
       if (studioId) ids.add(studioId);
     }
@@ -87,6 +107,23 @@ function extractStudioIdsFromValue(value: unknown): string[] {
 
     for (const [key, val] of Object.entries(obj)) {
       const normalizedKey = key.toLowerCase();
+      if (collectionKeys.includes(normalizedKey) && Array.isArray(val)) {
+        for (const entry of val) {
+          if (typeof entry === "object" && entry) {
+            const record = entry as Record<string, unknown>;
+            const directId =
+              normalizeStudioId(record.studio_id) ??
+              normalizeStudioId(record.studioId) ??
+              normalizeStudioId(record.instance_id) ??
+              normalizeStudioId(record.instanceId) ??
+              normalizeStudioId(record.id);
+            if (directId) ids.add(directId);
+          } else {
+            const directId = normalizeStudioId(entry);
+            if (directId) ids.add(directId);
+          }
+        }
+      }
       const normalizedVal = normalizeStudioId(val);
       if (
         normalizedVal &&
@@ -544,13 +581,14 @@ function ChatInput() {
       let mcpServers = res.data ?? {};
       let studioServerStatus =
         mcpServers["roblox-studio"] ?? mcpServers.roblox_studio ?? mcpServers.studio;
-
-      if (
+      const studioStatusValue =
         studioServerStatus &&
         typeof studioServerStatus === "object" &&
-        "status" in studioServerStatus &&
-        studioServerStatus.status !== "connected"
-      ) {
+        "status" in studioServerStatus
+          ? String(studioServerStatus.status)
+          : undefined;
+
+      if (!studioServerStatus || studioStatusValue !== "connected") {
         try {
           await client.mcp.connect({ name: "roblox-studio" });
           res = await client.mcp.status({});
