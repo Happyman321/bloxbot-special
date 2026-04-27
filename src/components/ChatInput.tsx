@@ -20,6 +20,48 @@ interface ImageAttachment {
   filename: string;
 }
 
+interface SpeechRecognitionConstructor {
+  new (): SpeechRecognitionLike;
+}
+
+interface SpeechRecognitionLike extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+interface SpeechRecognitionEventLike {
+  resultIndex: number;
+  results: {
+    length: number;
+    [index: number]: {
+      isFinal: boolean;
+      length: number;
+      [altIndex: number]: {
+        transcript: string;
+      };
+    };
+  };
+}
+
+interface SpeechRecognitionErrorEventLike {
+  error: string;
+}
+
+function getSpeechRecognitionConstructor(): SpeechRecognitionConstructor | null {
+  if (typeof window === "undefined") return null;
+  const maybeWindow = window as Window & {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+  };
+  return maybeWindow.SpeechRecognition ?? maybeWindow.webkitSpeechRecognition ?? null;
+}
+
 const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
 const MAX_ATTACHMENTS = 5;
@@ -374,6 +416,8 @@ function ChatInput() {
   const [detectedStudioIds, setDetectedStudioIds] = useState<string[]>([]);
   const [modelSearch, setModelSearch] = useState("");
   const [rejectShake, setRejectShake] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [interimTranscript, setInterimTranscript] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modelSearchRef = useRef<HTMLInputElement>(null);
@@ -382,6 +426,12 @@ function ChatInput() {
   const studioPickerRef = useRef<HTMLDivElement>(null);
   const dragCounterRef = useRef(0);
   const rejectTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const speechSupported = useMemo(() => getSpeechRecognitionConstructor() !== null, []);
+  const resizeTextarea = useCallback((el: HTMLTextAreaElement) => {
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, []);
 
   const triggerRejectShake = useCallback(() => {
     setRejectShake(true);
@@ -392,8 +442,89 @@ function ChatInput() {
   useEffect(() => {
     return () => {
       clearTimeout(rejectTimerRef.current);
+      recognitionRef.current?.stop();
     };
   }, []);
+
+  const stopVoiceInput = useCallback(() => {
+    recognitionRef.current?.stop();
+    setIsListening(false);
+    setInterimTranscript("");
+  }, []);
+
+  const startVoiceInput = useCallback(() => {
+    const SpeechRecognitionCtor = getSpeechRecognitionConstructor();
+    if (!SpeechRecognitionCtor) {
+      toast.error("Voice input is not available in this environment.");
+      return;
+    }
+
+    const recognition = new SpeechRecognitionCtor();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+
+    recognition.onresult = (event) => {
+      let finalText = "";
+      let interimText = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0]?.transcript ?? "";
+        if (event.results[i].isFinal) {
+          finalText += transcript;
+        } else {
+          interimText += transcript;
+        }
+      }
+
+      if (finalText.trim()) {
+        setText((prev) => {
+          const spacer = prev.trim().length > 0 ? " " : "";
+          return `${prev}${spacer}${finalText.trim()}`;
+        });
+        setTimeout(() => {
+          if (textareaRef.current) {
+            resizeTextarea(textareaRef.current);
+          }
+        }, 0);
+      }
+      setInterimTranscript(interimText.trim());
+    };
+
+    recognition.onerror = (event) => {
+      if (event.error !== "aborted") {
+        toast.error("Voice input failed. Please try again.");
+      }
+      setIsListening(false);
+      setInterimTranscript("");
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      setInterimTranscript("");
+      recognitionRef.current = null;
+    };
+
+    recognitionRef.current = recognition;
+
+    try {
+      recognition.start();
+      setIsListening(true);
+      setInterimTranscript("");
+    } catch {
+      toast.error("Unable to start voice input.");
+      setIsListening(false);
+      setInterimTranscript("");
+      recognitionRef.current = null;
+    }
+  }, [resizeTextarea]);
+
+  function handleMicClick() {
+    if (isListening) {
+      stopVoiceInput();
+      return;
+    }
+    startVoiceInput();
+  }
 
   const addImageFiles = useCallback(
     async (files: FileList | File[]) => {
@@ -498,11 +629,6 @@ function ChatInput() {
     },
     [addImageFiles],
   );
-
-  function resizeTextarea(el: HTMLTextAreaElement) {
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
-  }
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -618,6 +744,7 @@ function ChatInput() {
   }, [refreshStudios, showStudioPicker]);
 
   function handleSubmit() {
+    if (isListening) stopVoiceInput();
     const trimmed = text.trim();
     if (!trimmed && attachments.length === 0) return;
     if (isBusy) return;
@@ -1027,6 +1154,28 @@ function ChatInput() {
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
             </svg>
           </button>
+          <button
+            onClick={handleMicClick}
+            disabled={!speechSupported}
+            className={`mt-0.5 shrink-0 p-0.5 transition-colors ${isListening ? "text-red-500" : "text-muted-foreground/60 hover:text-foreground"} disabled:cursor-not-allowed disabled:opacity-30`}
+            title={isListening ? "Stop voice input" : "Voice input"}
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" />
+              <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
+              <line x1="12" y1="18" x2="12" y2="22" />
+              <line x1="8" y1="22" x2="16" y2="22" />
+            </svg>
+          </button>
           <textarea
             ref={textareaRef}
             value={text}
@@ -1055,6 +1204,11 @@ function ChatInput() {
           />
           <SendButton text={text} hasAttachments={attachments.length > 0} onSend={handleSubmit} />
         </div>
+        {isListening && interimTranscript && (
+          <div className="px-3 pb-2 text-[11px] text-muted-foreground/80">
+            Listening… {interimTranscript}
+          </div>
+        )}
       </div>
 
       <StatusHint />

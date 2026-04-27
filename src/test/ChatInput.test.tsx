@@ -199,6 +199,7 @@ describe("ChatInput", () => {
     const textarea = await screen.findByPlaceholderText("Describe what you want to build...");
     expect(textarea).toBeInTheDocument();
     expect(screen.getByTitle("Send")).toBeInTheDocument();
+    expect(screen.getByTitle("Voice input")).toBeDisabled();
   });
 
   it("sends a text message on submit", async () => {
