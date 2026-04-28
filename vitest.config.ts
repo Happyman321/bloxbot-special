@@ -14,7 +14,6 @@ export default defineConfig({
       "@tauri-apps/plugin-opener": mock("@tauri-apps/plugin-opener.ts"),
       "@tauri-apps/plugin-process": mock("@tauri-apps/plugin-process.ts"),
       "@tauri-apps/plugin-store": mock("@tauri-apps/plugin-store.ts"),
-      "@tauri-apps/plugin-updater": mock("@tauri-apps/plugin-updater.ts"),
     },
   },
   test: {

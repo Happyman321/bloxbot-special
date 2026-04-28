@@ -14,6 +14,10 @@ export interface ModelInfo {
   providerId: string;
   providerName: string;
   status?: "alpha" | "beta" | "deprecated";
+  modalities?: {
+    input: Array<"text" | "audio" | "image" | "video" | "pdf">;
+    output: Array<"text" | "audio" | "image" | "video" | "pdf">;
+  };
   variants?: Record<string, Record<string, unknown>>;
 }
 

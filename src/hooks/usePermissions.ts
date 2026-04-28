@@ -3,9 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 
 import { qk } from "@/lib/queryKeys";
 
-export function useActivePermission(): PermissionRequest | null {
+export function useActivePermission(sessionId?: string | null): PermissionRequest | null {
   const { data } = useQuery<PermissionRequest | null>({
-    queryKey: qk.permissions,
+    queryKey: sessionId ? qk.permission(sessionId) : qk.permissions,
     enabled: false,
   });
   return data ?? null;

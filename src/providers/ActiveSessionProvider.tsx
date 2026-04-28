@@ -64,12 +64,14 @@ export function ActiveSessionProvider({
             ? (qRes.value.data.find((q: QuestionRequest) => q.sessionID === sessionID) ?? null)
             : null;
         queryClient.setQueryData<QuestionRequest | null>(qk.questions, activeQ);
+        queryClient.setQueryData<QuestionRequest | null>(qk.question(sessionID), activeQ);
 
         const activeP =
           pRes.status === "fulfilled" && pRes.value.data
             ? (pRes.value.data.find((p: PermissionRequest) => p.sessionID === sessionID) ?? null)
             : null;
         queryClient.setQueryData<PermissionRequest | null>(qk.permissions, activeP);
+        queryClient.setQueryData<PermissionRequest | null>(qk.permission(sessionID), activeP);
 
         activeSessionIdRef.current = sessionID;
         setActiveSessionId(sessionID);

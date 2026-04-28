@@ -8,12 +8,61 @@ import type {
 } from "@opencode-ai/sdk/v2/client";
 import type { QueryClient } from "@tanstack/react-query";
 
+import { claimDictatorManagedSession, type DictatorProfile } from "@/lib/dictators";
+import { upsertSessionById } from "@/lib/dictatorWorkers";
 import { qk } from "@/lib/queryKeys";
 import type { MessageWithParts } from "@/types";
 
 export interface MessagesCache {
   messageIds: string[];
   messagesById: Record<string, MessageWithParts>;
+}
+
+function getCachedMessageSessionId(queryClient: QueryClient, messageID: string): string | null {
+  const messageCaches = queryClient.getQueriesData<MessagesCache>({ queryKey: ["sessions"] });
+  for (const [queryKey, cache] of messageCaches) {
+    if (!Array.isArray(queryKey) || queryKey.length !== 3 || queryKey[2] !== "messages") continue;
+    if (cache?.messagesById[messageID]) return String(queryKey[1]);
+  }
+  return null;
+}
+
+function updateSessionQuestion(
+  queryClient: QueryClient,
+  currentSessionId: string | null,
+  sessionID: string,
+  question: QuestionRequest | null,
+) {
+  queryClient.setQueryData<QuestionRequest | null>(qk.question(sessionID), question);
+  if (sessionID === currentSessionId) {
+    queryClient.setQueryData<QuestionRequest | null>(qk.questions, question);
+  }
+}
+
+function updateSessionPermission(
+  queryClient: QueryClient,
+  currentSessionId: string | null,
+  sessionID: string,
+  permission: PermissionRequest | null,
+) {
+  queryClient.setQueryData<PermissionRequest | null>(qk.permission(sessionID), permission);
+  if (sessionID === currentSessionId) {
+    queryClient.setQueryData<PermissionRequest | null>(qk.permissions, permission);
+  }
+}
+
+function claimDictatorChildSession(queryClient: QueryClient, session: Session) {
+  if (!session.parentID) return;
+
+  const profiles = queryClient.getQueryData<DictatorProfile[]>(qk.dictators);
+  if (!profiles?.some((profile) => profile.parentSessionId === session.parentID)) return;
+
+  queryClient.setQueryData<Session[]>(qk.dictatorChildren(session.parentID), (prev) =>
+    upsertSessionById(prev ?? [], session),
+  );
+  queryClient.setQueryData<DictatorProfile[]>(qk.dictators, (prev) =>
+    claimDictatorManagedSession(prev, session.id, session.parentID),
+  );
 }
 
 /**
@@ -38,6 +87,7 @@ export function sseDispatch(
           if (prev.some((s) => s.id === info.id)) return prev;
           return [info, ...prev];
         });
+        claimDictatorChildSession(queryClient, info);
         break;
       }
       case "session.updated": {
@@ -46,6 +96,7 @@ export function sseDispatch(
           if (!prev) return prev;
           return prev.map((s) => (s.id === info.id ? info : s));
         });
+        claimDictatorChildSession(queryClient, info);
         break;
       }
       case "session.deleted": {
@@ -74,8 +125,7 @@ export function sseDispatch(
       }
       case "message.updated": {
         const { info } = event.properties;
-        if (info.sessionID !== currentSessionId) break;
-        queryClient.setQueryData<MessagesCache>(qk.messages(currentSessionId), (prev) => {
+        queryClient.setQueryData<MessagesCache>(qk.messages(info.sessionID), (prev) => {
           if (!prev)
             return { messageIds: [info.id], messagesById: { [info.id]: { info, parts: [] } } };
           const existing = prev.messagesById[info.id];
@@ -94,8 +144,7 @@ export function sseDispatch(
       }
       case "message.part.updated": {
         const { part } = event.properties;
-        if (part.sessionID !== currentSessionId) break;
-        queryClient.setQueryData<MessagesCache>(qk.messages(currentSessionId), (prev) => {
+        queryClient.setQueryData<MessagesCache>(qk.messages(part.sessionID), (prev) => {
           if (!prev) return prev;
           const msg = prev.messagesById[part.messageID];
           if (!msg) return prev;
@@ -116,8 +165,9 @@ export function sseDispatch(
       }
       case "message.part.delta": {
         const { messageID, partID, field, delta } = event.properties;
-        if (!currentSessionId) break;
-        queryClient.setQueryData<MessagesCache>(qk.messages(currentSessionId), (prev) => {
+        const sessionID = getCachedMessageSessionId(queryClient, messageID) ?? currentSessionId;
+        if (!sessionID) break;
+        queryClient.setQueryData<MessagesCache>(qk.messages(sessionID), (prev) => {
           if (!prev) return prev;
           const msg = prev.messagesById[messageID];
           if (!msg) return prev;
@@ -139,8 +189,7 @@ export function sseDispatch(
       }
       case "message.removed": {
         const { sessionID, messageID } = event.properties;
-        if (sessionID !== currentSessionId) break;
-        queryClient.setQueryData<MessagesCache>(qk.messages(currentSessionId), (prev) => {
+        queryClient.setQueryData<MessagesCache>(qk.messages(sessionID), (prev) => {
           if (!prev) return prev;
           const { [messageID]: _removed, ...rest } = prev.messagesById;
           return {
@@ -152,8 +201,7 @@ export function sseDispatch(
       }
       case "message.part.removed": {
         const { sessionID, messageID, partID } = event.properties;
-        if (sessionID !== currentSessionId) break;
-        queryClient.setQueryData<MessagesCache>(qk.messages(currentSessionId), (prev) => {
+        queryClient.setQueryData<MessagesCache>(qk.messages(sessionID), (prev) => {
           if (!prev) return prev;
           const msg = prev.messagesById[messageID];
           if (!msg) return prev;
@@ -169,38 +217,28 @@ export function sseDispatch(
       }
       case "todo.updated": {
         const { sessionID, todos } = event.properties;
-        if (sessionID === currentSessionId) {
-          queryClient.setQueryData<Todo[]>(qk.todos(currentSessionId), todos);
-        }
+        queryClient.setQueryData<Todo[]>(qk.todos(sessionID), todos);
         break;
       }
       case "question.asked": {
         const props = event.properties;
-        if (props.sessionID === currentSessionId) {
-          queryClient.setQueryData<QuestionRequest | null>(qk.questions, props);
-        }
+        updateSessionQuestion(queryClient, currentSessionId, props.sessionID, props);
         break;
       }
       case "question.replied":
       case "question.rejected": {
         const { sessionID } = event.properties;
-        if (sessionID === currentSessionId) {
-          queryClient.setQueryData<QuestionRequest | null>(qk.questions, null);
-        }
+        updateSessionQuestion(queryClient, currentSessionId, sessionID, null);
         break;
       }
       case "permission.asked": {
         const props = event.properties;
-        if (props.sessionID === currentSessionId) {
-          queryClient.setQueryData<PermissionRequest | null>(qk.permissions, props);
-        }
+        updateSessionPermission(queryClient, currentSessionId, props.sessionID, props);
         break;
       }
       case "permission.replied": {
         const { sessionID } = event.properties;
-        if (sessionID === currentSessionId) {
-          queryClient.setQueryData<PermissionRequest | null>(qk.permissions, null);
-        }
+        updateSessionPermission(queryClient, currentSessionId, sessionID, null);
         break;
       }
     }

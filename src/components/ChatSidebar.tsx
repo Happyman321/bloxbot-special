@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useCreateSession } from "@/hooks/mutations/useCreateSession";
 import { useDeleteSession } from "@/hooks/mutations/useDeleteSession";
 import { useRenameSession } from "@/hooks/mutations/useRenameSession";
+import { useManagedDictatorSessionIds } from "@/hooks/useDictators";
 import { useSessionStatuses } from "@/hooks/useSessionStatuses";
 import { useSessions } from "@/hooks/useSessions";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
@@ -49,6 +50,7 @@ const ChatSidebar = memo(function ChatSidebar({
   onOpenSettings,
 }: ChatSidebarProps) {
   const { data: sessions = [] } = useSessions();
+  const managedDictatorSessionIds = useManagedDictatorSessionIds();
   const { activeSessionId, selectSession } = useActiveSession();
   const { data: sessionStatuses = {} } = useSessionStatuses();
   const createSession = useCreateSession();
@@ -111,12 +113,13 @@ const ChatSidebar = memo(function ChatSidebar({
   }, [activeWorkspace, folderInstructionsByName]);
 
   const visibleSessions = useMemo(() => {
-    if (activeWorkspace === "all") return sessions;
+    const normalSessions = sessions.filter((session) => !managedDictatorSessionIds.has(session.id));
+    if (activeWorkspace === "all") return normalSessions;
     if (activeWorkspace === "unfiled") {
-      return sessions.filter((session) => !sessionFolderById[session.id]);
+      return normalSessions.filter((session) => !sessionFolderById[session.id]);
     }
-    return sessions.filter((session) => sessionFolderById[session.id] === activeWorkspace);
-  }, [activeWorkspace, sessionFolderById, sessions]);
+    return normalSessions.filter((session) => sessionFolderById[session.id] === activeWorkspace);
+  }, [activeWorkspace, managedDictatorSessionIds, sessionFolderById, sessions]);
 
   function startRename(session: { id: string; title?: string }) {
     setEditingId(session.id);

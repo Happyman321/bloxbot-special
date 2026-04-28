@@ -252,12 +252,22 @@
   75%      { transform: translateY(-1px) rotate(3deg); }
 }
 
+@keyframes bloxbot-dictator {
+  0%, 100% { transform: translateY(0) scale(1); }
+  35%      { transform: translateY(-2px) scale(1.03); }
+  70%      { transform: translateY(0) scale(0.99); }
+}
+
 .bloxbot-face {
   animation: bloxbot-float 2.5s ease-in-out infinite;
 }
 
 .bloxbot-face-think {
   animation: bloxbot-think 1.8s ease-in-out infinite;
+}
+
+.bloxbot-dictator {
+  animation: bloxbot-dictator 1.6s ease-in-out infinite;
 }
 
 .bloxbot-eye {

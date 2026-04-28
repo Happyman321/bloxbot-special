@@ -91,10 +91,6 @@ pub fn run() {
                 }
             });
 
-            // ── Updater plugin ────────────────────────────────────
-            app.handle()
-                .plugin(tauri_plugin_updater::Builder::new().build())?;
-
             // ── Start OpenCode, then show window ─────────────────
             // The window stays hidden until OpenCode is alive.
             // If it can't start after retries, exit — there's nothing to show.

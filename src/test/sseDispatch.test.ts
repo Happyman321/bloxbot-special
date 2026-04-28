@@ -106,6 +106,42 @@ describe("sseDispatch", () => {
       const sessions = requireData(qc.getQueryData<Session[]>(qk.sessions));
       expect(sessions).toHaveLength(1);
     });
+
+    it("claims Dictator child sessions into the worker cache", () => {
+      qc.setQueryData(qk.dictators, [
+        {
+          id: "d1",
+          name: "Boss",
+          parentSessionId: "parent",
+          managedSessionIds: ["parent"],
+          instructions: "",
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          settings: {
+            maxWorkersPerTask: 3,
+            maxConcurrentWorkers: 3,
+            maxWriteWorkers: 1,
+            workerAgentAllowlist: ["dictator-worker"],
+            approvalRequired: true,
+            autoDenyOverBudget: true,
+            modelKey: null,
+            workerModelKey: null,
+          },
+        },
+      ]);
+      const child = { ...makeSession("child", "Inspect Studio"), parentID: "parent" };
+
+      dispatch(qc, {
+        type: "session.created",
+        properties: { info: child },
+      });
+
+      expect(qc.getQueryData<Session[]>(qk.dictatorChildren("parent"))?.[0].id).toBe("child");
+      expect(
+        qc.getQueryData<Array<{ managedSessionIds: string[] }>>(qk.dictators)?.[0]
+          .managedSessionIds,
+      ).toContain("child");
+    });
   });
 
   describe("session.updated", () => {
@@ -403,6 +439,38 @@ describe("sseDispatch", () => {
         requireData(qc.getQueryData<MessagesCache>(qk.messages("s1"))).messagesById.m1.parts,
       ).toHaveLength(0);
     });
+
+    it("routes deltas to a cached non-active session by message ID", () => {
+      qc.setQueryData<MessagesCache>(qk.messages("parent"), {
+        messageIds: [],
+        messagesById: {},
+      });
+      qc.setQueryData<MessagesCache>(qk.messages("worker"), {
+        messageIds: ["m-worker"],
+        messagesById: {
+          "m-worker": {
+            info: makeMessageInfo({ id: "m-worker", sessionID: "worker" }),
+            parts: [makeMessagePart({ id: "p-worker", type: "text", text: "Work" })],
+          },
+        },
+      });
+
+      dispatch(
+        qc,
+        {
+          type: "message.part.delta",
+          properties: { messageID: "m-worker", partID: "p-worker", delta: " done" },
+        },
+        "parent",
+      );
+
+      const workerPart = requireData(qc.getQueryData<MessagesCache>(qk.messages("worker")))
+        .messagesById["m-worker"].parts[0] as { text?: string };
+      expect(workerPart.text).toBe("Work done");
+      expect(requireData(qc.getQueryData<MessagesCache>(qk.messages("parent"))).messageIds).toEqual(
+        [],
+      );
+    });
   });
 
   describe("message.removed", () => {
@@ -484,6 +552,7 @@ describe("sseDispatch", () => {
       );
 
       expect(qc.getQueryData<Todo[]>(qk.todos("s1"))).toEqual([]);
+      expect(qc.getQueryData<Todo[]>(qk.todos("s2"))).toEqual([{ id: "t1" }]);
     });
   });
 
@@ -502,6 +571,9 @@ describe("sseDispatch", () => {
 
       const q = qc.getQueryData<QuestionRequest | null>(qk.questions);
       expect((q as { id?: string } | null)?.id).toBe("q1");
+      expect(
+        (qc.getQueryData<QuestionRequest | null>(qk.question("s1")) as { id?: string }).id,
+      ).toBe("q1");
     });
   });
 
@@ -512,6 +584,7 @@ describe("sseDispatch", () => {
       dispatch(qc, { type: "question.replied", properties: { sessionID: "s1" } }, "s1");
 
       expect(qc.getQueryData(qk.questions)).toBeNull();
+      expect(qc.getQueryData(qk.question("s1"))).toBeNull();
     });
 
     it("clears the question on reject", () => {
@@ -520,6 +593,7 @@ describe("sseDispatch", () => {
       dispatch(qc, { type: "question.rejected", properties: { sessionID: "s1" } }, "s1");
 
       expect(qc.getQueryData(qk.questions)).toBeNull();
+      expect(qc.getQueryData(qk.question("s1"))).toBeNull();
     });
   });
 
@@ -538,6 +612,9 @@ describe("sseDispatch", () => {
 
       const p = qc.getQueryData<PermissionRequest | null>(qk.permissions);
       expect((p as { id?: string } | null)?.id).toBe("p1");
+      expect(
+        (qc.getQueryData<PermissionRequest | null>(qk.permission("s1")) as { id?: string }).id,
+      ).toBe("p1");
     });
   });
 
@@ -548,6 +625,7 @@ describe("sseDispatch", () => {
       dispatch(qc, { type: "permission.replied", properties: { sessionID: "s1" } }, "s1");
 
       expect(qc.getQueryData(qk.permissions)).toBeNull();
+      expect(qc.getQueryData(qk.permission("s1"))).toBeNull();
     });
   });
 

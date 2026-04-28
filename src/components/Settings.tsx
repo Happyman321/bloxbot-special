@@ -2,7 +2,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { check } from "@tauri-apps/plugin-updater";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useCompleteOAuth, useStartOAuth } from "@/hooks/mutations/useOAuth";
@@ -1131,50 +1130,7 @@ function UsageTab() {
 // About Tab
 // ═══════════════════════════════════════════════════════════════════════
 
-type UpdateCheckStatus = "idle" | "checking" | "available" | "downloading" | "up-to-date" | "error";
-
 function AboutTab({ appVersion }: { appVersion: string | null }) {
-  const [updateStatus, setUpdateStatus] = useState<UpdateCheckStatus>("idle");
-  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
-  const [updateError, setUpdateError] = useState<string | null>(null);
-
-  // Hold on to the Update handle so we can download it later
-  const updateRef = useRef<Awaited<ReturnType<typeof check>> | null>(null);
-
-  async function handleCheckForUpdates() {
-    setUpdateStatus("checking");
-    setUpdateError(null);
-    setUpdateVersion(null);
-    try {
-      const update = await check();
-      if (!update) {
-        setUpdateStatus("up-to-date");
-        return;
-      }
-      updateRef.current = update;
-      setUpdateVersion(update.version);
-      setUpdateStatus("available");
-    } catch (err) {
-      console.error("[about] Failed to check for updates:", err);
-      setUpdateError(err instanceof Error ? err.message : "Could not reach update server");
-      setUpdateStatus("error");
-    }
-  }
-
-  async function handleInstall() {
-    const update = updateRef.current;
-    if (!update) return;
-    try {
-      setUpdateStatus("downloading");
-      await update.downloadAndInstall();
-      await relaunch();
-    } catch (err) {
-      console.error("[about] Failed to install update:", err);
-      setUpdateError(err instanceof Error ? err.message : "Installation failed");
-      setUpdateStatus("error");
-    }
-  }
-
   return (
     <div className="mx-auto w-full max-w-md px-6 py-8">
       <h4 className="font-serif text-lg italic text-foreground">About BloxBot</h4>
@@ -1182,7 +1138,7 @@ function AboutTab({ appVersion }: { appVersion: string | null }) {
         AI-assisted Roblox development, right from your desktop.
       </p>
 
-      {/* Version & update check */}
+      {/* Version */}
       <div className="mt-6">
         <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           Version
@@ -1194,104 +1150,7 @@ function AboutTab({ appVersion }: { appVersion: string | null }) {
                 BloxBot{appVersion && <span className="font-mono"> v{appVersion}</span>}
               </span>
             </div>
-            {updateStatus === "idle" && (
-              <button
-                onClick={handleCheckForUpdates}
-                className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
-              >
-                <svg
-                  width="11"
-                  height="11"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polyline points="23 4 23 10 17 10" />
-                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-                </svg>
-                Check for updates
-              </button>
-            )}
-            {updateStatus === "checking" && (
-              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <svg
-                  className="h-3 w-3 animate-spin"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
-                </svg>
-                Checking...
-              </span>
-            )}
-            {updateStatus === "up-to-date" && (
-              <span className="flex items-center gap-1.5 text-[11px] text-emerald-600">
-                <svg
-                  width="11"
-                  height="11"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-                Up to date
-              </span>
-            )}
-            {updateStatus === "downloading" && (
-              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <svg
-                  className="h-3 w-3 animate-spin"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
-                </svg>
-                Installing...
-              </span>
-            )}
           </div>
-
-          {/* Update available */}
-          {updateStatus === "available" && updateVersion && (
-            <div className="mt-3 flex items-center justify-between rounded-md border bg-background px-3 py-2">
-              <span className="text-xs">
-                <span className="font-medium">v{updateVersion}</span>{" "}
-                <span className="text-muted-foreground">is available</span>
-              </span>
-              <button
-                onClick={handleInstall}
-                className="rounded-md bg-foreground px-3 py-1 text-[11px] font-medium text-background transition-opacity hover:opacity-90"
-              >
-                Install & Restart
-              </button>
-            </div>
-          )}
-
-          {/* Error */}
-          {updateStatus === "error" && updateError && (
-            <div className="mt-3">
-              <p className="rounded-md bg-red-50 px-2 py-1 text-[11px] text-red-600">
-                {updateError}
-              </p>
-              <button
-                onClick={handleCheckForUpdates}
-                className="mt-2 text-[11px] text-muted-foreground underline hover:text-foreground"
-              >
-                Try again
-              </button>
-            </div>
-          )}
         </div>
       </div>
 

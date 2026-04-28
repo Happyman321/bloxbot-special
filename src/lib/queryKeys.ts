@@ -4,10 +4,18 @@ export const qk = {
   messages: (id: string) => ["sessions", id, "messages"] as const,
   changes: (id: string) => ["sessions", id, "changes"] as const,
   todos: (id: string) => ["sessions", id, "todos"] as const,
+  question: (id: string) => ["sessions", id, "question"] as const,
+  permission: (id: string) => ["sessions", id, "permission"] as const,
   statuses: ["session-statuses"] as const,
   providers: ["providers"] as const,
+  imageProjects: ["image-projects"] as const,
   agents: ["agents"] as const,
   questions: ["questions"] as const,
   permissions: ["permissions"] as const,
   config: ["config"] as const,
+  dictators: ["dictators"] as const,
+  dictator: (id: string) => ["dictators", id] as const,
+  dictatorChildren: (parentSessionId: string) =>
+    ["dictators", parentSessionId, "children"] as const,
+  dictatorTasks: (id: string) => ["dictators", id, "tasks"] as const,
 };

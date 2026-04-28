@@ -59,48 +59,58 @@ export async function fetchMessages(
 }
 
 export function useMessagesCache(): MessagesCache {
+  return useSessionMessagesCache();
+}
+
+export function useSessionMessagesCache(sessionIdOverride?: string | null): MessagesCache {
   const { activeSessionId } = useActiveSession();
   const { client, ready } = useOpenCodeClient();
+  const sessionId = sessionIdOverride ?? activeSessionId;
 
   const { data } = useQuery<MessagesCache>({
-    queryKey: activeSessionId ? qk.messages(activeSessionId) : NOOP_KEY,
+    queryKey: sessionId ? qk.messages(sessionId) : NOOP_KEY,
     queryFn: () => {
-      if (!client || !activeSessionId) return EMPTY_CACHE;
-      return fetchMessages(client, activeSessionId);
+      if (!client || !sessionId) return EMPTY_CACHE;
+      return fetchMessages(client, sessionId);
     },
-    enabled: ready && !!client && !!activeSessionId,
+    enabled: ready && !!client && !!sessionId,
   });
 
   return data ?? EMPTY_CACHE;
 }
 
-export function useMessageIds(): string[] {
+export function useMessageIds(sessionIdOverride?: string | null): string[] {
   const { activeSessionId } = useActiveSession();
   const { client, ready } = useOpenCodeClient();
+  const sessionId = sessionIdOverride ?? activeSessionId;
 
   const { data } = useQuery<MessagesCache, Error, string[]>({
-    queryKey: activeSessionId ? qk.messages(activeSessionId) : NOOP_KEY,
+    queryKey: sessionId ? qk.messages(sessionId) : NOOP_KEY,
     queryFn: () => {
-      if (!client || !activeSessionId) return EMPTY_CACHE;
-      return fetchMessages(client, activeSessionId);
+      if (!client || !sessionId) return EMPTY_CACHE;
+      return fetchMessages(client, sessionId);
     },
-    enabled: ready && !!client && !!activeSessionId,
+    enabled: ready && !!client && !!sessionId,
     select: useCallback((d: MessagesCache) => d.messageIds, []),
   });
   return data ?? EMPTY_IDS;
 }
 
-export function useMessage(messageId: string): MessageWithParts | undefined {
+export function useMessage(
+  messageId: string,
+  sessionIdOverride?: string | null,
+): MessageWithParts | undefined {
   const { activeSessionId } = useActiveSession();
   const { client, ready } = useOpenCodeClient();
+  const sessionId = sessionIdOverride ?? activeSessionId;
 
   return useQuery<MessagesCache, Error, MessageWithParts | undefined>({
-    queryKey: activeSessionId ? qk.messages(activeSessionId) : NOOP_KEY,
+    queryKey: sessionId ? qk.messages(sessionId) : NOOP_KEY,
     queryFn: () => {
-      if (!client || !activeSessionId) return EMPTY_CACHE;
-      return fetchMessages(client, activeSessionId);
+      if (!client || !sessionId) return EMPTY_CACHE;
+      return fetchMessages(client, sessionId);
     },
-    enabled: ready && !!client && !!activeSessionId,
+    enabled: ready && !!client && !!sessionId,
     select: useCallback((d: MessagesCache) => d.messagesById[messageId], [messageId]),
   }).data;
 }

@@ -1,7 +1,3 @@
-import { relaunch } from "@tauri-apps/plugin-process";
-import { check } from "@tauri-apps/plugin-updater";
-import { useRef, useState } from "react";
-
 interface LoadingScreenProps {
   message?: string;
   detail?: string;
@@ -13,14 +9,11 @@ interface LoadingScreenProps {
   retrying?: boolean;
 }
 
-type UpdateCheckStatus = "idle" | "checking" | "available" | "downloading" | "up-to-date" | "error";
-
 /**
  * Full-screen loading state featuring the animated BloxBot face.
  * Used during server startup and SDK initialization.
  *
- * When `error` is true, shows a sad face with a "Check for Updates"
- * button and a link to the BloxBot website for support.
+ * When `error` is true, shows a sad face with retry and support actions.
  */
 function LoadingScreen({
   message = "Starting up...",
@@ -29,40 +22,6 @@ function LoadingScreen({
   onRetry,
   retrying,
 }: LoadingScreenProps) {
-  const [updateStatus, setUpdateStatus] = useState<UpdateCheckStatus>("idle");
-  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
-  const updateRef = useRef<Awaited<ReturnType<typeof check>> | null>(null);
-
-  async function handleCheckForUpdates() {
-    setUpdateStatus("checking");
-    try {
-      const update = await check();
-      if (!update) {
-        setUpdateStatus("up-to-date");
-        return;
-      }
-      updateRef.current = update;
-      setUpdateVersion(update.version);
-      setUpdateStatus("available");
-    } catch (err) {
-      console.error("[loading] Failed to check for updates:", err);
-      setUpdateStatus("error");
-    }
-  }
-
-  async function handleInstall() {
-    const update = updateRef.current;
-    if (!update) return;
-    try {
-      setUpdateStatus("downloading");
-      await update.downloadAndInstall();
-      await relaunch();
-    } catch (err) {
-      console.error("[loading] Failed to install update:", err);
-      setUpdateStatus("error");
-    }
-  }
-
   return (
     <div className="flex h-full w-full flex-col items-center justify-center px-6">
       <div className="animate-fade-in flex flex-col items-center">
@@ -181,72 +140,6 @@ function LoadingScreen({
 
             {/* Secondary actions  - text links only */}
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
-              {updateStatus === "idle" && (
-                <button
-                  type="button"
-                  onClick={handleCheckForUpdates}
-                  className="underline transition-colors hover:text-foreground"
-                >
-                  Check for updates
-                </button>
-              )}
-
-              {updateStatus === "checking" && (
-                <span className="flex items-center gap-1.5">
-                  <svg
-                    className="h-3 w-3 animate-spin"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
-                  </svg>
-                  Checking...
-                </span>
-              )}
-
-              {updateStatus === "up-to-date" && (
-                <span className="text-emerald-600">Up to date</span>
-              )}
-
-              {updateStatus === "available" && updateVersion && (
-                <button
-                  type="button"
-                  onClick={handleInstall}
-                  className="underline transition-colors hover:text-foreground"
-                >
-                  Install v{updateVersion} &amp; restart
-                </button>
-              )}
-
-              {updateStatus === "downloading" && (
-                <span className="flex items-center gap-1.5">
-                  <svg
-                    className="h-3 w-3 animate-spin"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
-                  </svg>
-                  Installing...
-                </span>
-              )}
-
-              {updateStatus === "error" && (
-                <button
-                  type="button"
-                  onClick={handleCheckForUpdates}
-                  className="underline transition-colors hover:text-foreground"
-                >
-                  Retry update check
-                </button>
-              )}
-
-              <span className="text-muted-foreground/40">|</span>
-
               <a
                 href="https://bloxbot.ai"
                 target="_blank"

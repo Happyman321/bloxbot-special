@@ -1273,8 +1273,14 @@ const UserPartsView = memo(
 
 // ── Message bubble ─────────────────────────────────────────────────────
 
-const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: string }) {
-  const msg = useMessage(messageId);
+const MessageBubble = memo(function MessageBubble({
+  messageId,
+  sessionId,
+}: {
+  messageId: string;
+  sessionId?: string | null;
+}) {
+  const msg = useMessage(messageId, sessionId);
   if (!msg) return null;
 
   const isUser = msg.info.role === "user";
@@ -1308,23 +1314,29 @@ const MessageBubble = memo(function MessageBubble({ messageId }: { messageId: st
 
 // ── Main component ─────────────────────────────────────────────────────
 
-const BusyThinkingIndicator = memo(function BusyThinkingIndicator() {
-  const messageIds = useMessageIds();
+const BusyThinkingIndicator = memo(function BusyThinkingIndicator({
+  sessionId,
+}: {
+  sessionId?: string | null;
+}) {
+  const messageIds = useMessageIds(sessionId);
   const { activeSessionId } = useActiveSession();
-  const isBusy = useIsBusy(activeSessionId);
+  const resolvedSessionId = sessionId ?? activeSessionId;
+  const isBusy = useIsBusy(resolvedSessionId);
   const lastId = messageIds.length > 0 ? messageIds[messageIds.length - 1] : null;
-  const lastMsg = useMessage(lastId ?? "");
+  const lastMsg = useMessage(lastId ?? "", sessionId);
   if (!isBusy || !lastMsg || lastMsg.info.role !== "user") return null;
   return <BloxBotThinking />;
 });
 
-function ChatMessages() {
-  const messageIds = useMessageIds();
+function ChatMessages({ sessionId }: { sessionId?: string | null }) {
+  const messageIds = useMessageIds(sessionId);
   const { activeSessionId } = useActiveSession();
-  const isBusy = useIsBusy(activeSessionId);
-  const todos = useTodos();
-  const activeQuestion = useActiveQuestion();
-  const activePermission = useActivePermission();
+  const resolvedSessionId = sessionId ?? activeSessionId;
+  const isBusy = useIsBusy(resolvedSessionId);
+  const todos = useTodos(sessionId);
+  const activeQuestion = useActiveQuestion(resolvedSessionId);
+  const activePermission = useActivePermission(resolvedSessionId);
   const answerQuestion = useAnswerQuestion();
   const rejectQuestion = useRejectQuestion();
   const replyPermission = useReplyPermission();
@@ -1428,7 +1440,7 @@ function ChatMessages() {
               }}
             >
               <div className="pb-4">
-                <MessageBubble messageId={messageIds[virtualItem.index]} />
+                <MessageBubble messageId={messageIds[virtualItem.index]} sessionId={sessionId} />
               </div>
             </div>
           ))}
@@ -1445,7 +1457,7 @@ function ChatMessages() {
           {activePermission && (
             <PermissionPrompt permission={activePermission} onReply={handleReplyPermission} />
           )}
-          <BusyThinkingIndicator />
+          <BusyThinkingIndicator sessionId={sessionId} />
         </div>
         <div ref={bottomRef} />
       </div>

@@ -145,6 +145,84 @@ describe("ChatSidebar", () => {
     expect(screen.getByText("Session Beta")).toBeInTheDocument();
   });
 
+  it("hides Dictator-managed parent and worker sessions from normal chat", async () => {
+    const client = createClient();
+    const qc = createQueryClient();
+    seedState(qc, {
+      sessions: [
+        makeSession("normal", "Normal Session"),
+        makeSession("dictator-parent", "Dictator: Boss"),
+        makeSession("dictator-worker", "Worker Session"),
+      ],
+    });
+    qc.setQueryData(qk.dictators, [
+      {
+        id: "d1",
+        name: "Boss",
+        parentSessionId: "dictator-parent",
+        managedSessionIds: ["dictator-parent", "dictator-worker"],
+        instructions: "",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        settings: {
+          maxWorkersPerTask: 3,
+          maxConcurrentWorkers: 3,
+          maxWriteWorkers: 1,
+          workerAgentAllowlist: ["dictator-worker"],
+          approvalRequired: true,
+          autoDenyOverBudget: true,
+          modelKey: null,
+          workerModelKey: null,
+        },
+      },
+    ]);
+
+    render(<TestSidebar client={client} queryClient={qc} />);
+
+    expect(await screen.findByText("Normal Session")).toBeInTheDocument();
+    expect(screen.queryByText("Dictator: Boss")).not.toBeInTheDocument();
+    expect(screen.queryByText("Worker Session")).not.toBeInTheDocument();
+  });
+
+  it("hides Dictator child sessions by parentID before they are persisted", async () => {
+    const client = createClient();
+    const qc = createQueryClient();
+    seedState(qc, {
+      sessions: [
+        makeSession("normal", "Normal Session"),
+        makeSession("dictator-parent", "Dictator: Boss"),
+        { ...makeSession("dictator-child", "Inspect Studio"), parentID: "dictator-parent" },
+      ],
+    });
+    qc.setQueryData(qk.dictators, [
+      {
+        id: "d1",
+        name: "Boss",
+        parentSessionId: "dictator-parent",
+        managedSessionIds: ["dictator-parent"],
+        instructions: "",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        settings: {
+          maxWorkersPerTask: 3,
+          maxConcurrentWorkers: 3,
+          maxWriteWorkers: 1,
+          workerAgentAllowlist: ["dictator-worker"],
+          approvalRequired: true,
+          autoDenyOverBudget: true,
+          modelKey: null,
+          workerModelKey: null,
+        },
+      },
+    ]);
+
+    render(<TestSidebar client={client} queryClient={qc} />);
+
+    expect(await screen.findByText("Normal Session")).toBeInTheDocument();
+    expect(screen.queryByText("Dictator: Boss")).not.toBeInTheDocument();
+    expect(screen.queryByText("Inspect Studio")).not.toBeInTheDocument();
+  });
+
   it("shows empty state when no sessions", async () => {
     const client = createClient();
     const qc = createQueryClient();

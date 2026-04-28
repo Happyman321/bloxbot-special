@@ -60,6 +60,7 @@ export function useAllModels(): ModelInfo[] {
         providerId: provider.id,
         providerName: provider.name,
         status: model.status,
+        modalities: model.modalities,
         variants: model.variants,
       });
     }
