@@ -2,7 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { useCompleteOAuth, useStartOAuth } from "@/hooks/mutations/useOAuth";
 import { useDisconnectProvider, useSetApiKey } from "@/hooks/mutations/useSetApiKey";
@@ -12,10 +12,17 @@ import {
   useAuthMethods,
   useConnectedProviders,
 } from "@/hooks/useProviders";
+import {
+  formatDiagnosticsReport,
+  getDiagnosticsSnapshot,
+  subscribeDiagnostics,
+} from "@/lib/diagnostics";
 import { qk } from "@/lib/queryKeys";
+import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import type { ModelInfo, ProviderInfo } from "@/types";
+import type { SessionStatus } from "@opencode-ai/sdk/v2/client";
 
 // ── Popular providers (same order as OpenCode's web UI) ──────────────
 const POPULAR_PROVIDERS = [
@@ -240,7 +247,7 @@ function Settings({ onClose }: SettingsProps) {
 
         {/* Content area */}
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-          {tab === "providers" && <ProvidersTab />}
+          {tab === "providers" && <ProvidersTab appVersion={appVersion} />}
           {tab === "models" && <ModelsTab />}
           {tab === "appearance" && <AppearanceTab />}
           {tab === "usage" && <UsageTab />}
@@ -267,9 +274,11 @@ type ConnectDialogState =
     }
   | { step: "apikey"; provider: ProviderInfo };
 
-function ProvidersTab() {
+function ProvidersTab({ appVersion }: { appVersion: string | null }) {
   const queryClient = useQueryClient();
-  const { client } = useOpenCodeClient();
+  const { activeSessionId } = useActiveSession();
+  const { client, port } = useOpenCodeClient();
+  const { selectedModel } = usePreferences();
   const allProviders = useAllProviders();
   const connectedProviders = useConnectedProviders();
   const authMethods = useAuthMethods();
@@ -286,6 +295,11 @@ function ProvidersTab() {
   const [error, setError] = useState<string | null>(null);
   const [refreshingModels, setRefreshingModels] = useState(false);
   const [restartingApp, setRestartingApp] = useState(false);
+  const diagnostics = useSyncExternalStore(
+    subscribeDiagnostics,
+    getDiagnosticsSnapshot,
+    getDiagnosticsSnapshot,
+  );
 
   const oauthAbortRef = useRef<AbortController | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -502,6 +516,27 @@ function ProvidersTab() {
     }
   }
 
+  async function handleCopyDiagnostics() {
+    const statuses = queryClient.getQueryData<Record<string, SessionStatus>>(qk.statuses);
+    const report = formatDiagnosticsReport({
+      appVersion,
+      port,
+      selectedModel,
+      connectedProviders,
+      activeSessionId,
+      activeSessionStatus: activeSessionId ? statuses?.[activeSessionId] : undefined,
+      openaiAuthMethods: authMethods.openai,
+    });
+
+    try {
+      await navigator.clipboard.writeText(report);
+      toast.success("Diagnostics copied");
+    } catch (err) {
+      console.error("[providers] Failed to copy diagnostics:", err);
+      toast.error("Could not copy diagnostics");
+    }
+  }
+
   // Split providers into connected and unconnected
   const connected = allProviders.filter((p) => connectedProviders.includes(p.id));
   const unconnected = allProviders.filter((p) => !connectedProviders.includes(p.id));
@@ -550,6 +585,16 @@ function ProvidersTab() {
           >
             {restartingApp ? "Restarting..." : "Clear cache & reload app"}
           </button>
+          <button
+            onClick={handleCopyDiagnostics}
+            className="rounded-md border bg-background px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent"
+          >
+            Copy diagnostics
+          </button>
+        </div>
+        <div className="mt-2 text-[10px] text-muted-foreground">
+          SSE: {diagnostics.sse.state}
+          {diagnostics.sse.lastEventType ? `, last event ${diagnostics.sse.lastEventType}` : ""}
         </div>
       </div>
 

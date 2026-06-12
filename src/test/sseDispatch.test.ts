@@ -15,6 +15,7 @@ import type {
 } from "@opencode-ai/sdk/v2/client";
 import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getDiagnosticsSnapshot, resetDiagnosticsForTest } from "@/lib/diagnostics";
 import { qk } from "@/lib/queryKeys";
 import { type MessagesCache, sseDispatch } from "@/lib/sseDispatch";
 import type { MessageWithParts } from "@/types";
@@ -57,6 +58,7 @@ describe("sseDispatch", () => {
 
   beforeEach(() => {
     qc = makeQC();
+    resetDiagnosticsForTest();
   });
 
   // ── Guard clauses ──────────────────────────────────────────────────
@@ -198,6 +200,11 @@ describe("sseDispatch", () => {
 
       const statuses = requireData(qc.getQueryData<Record<string, SessionStatus>>(qk.statuses));
       expect(statuses.s1.type).toBe("busy");
+      expect(getDiagnosticsSnapshot().lastStatusUpdate).toMatchObject({
+        sessionID: "s1",
+        statusType: "busy",
+      });
+      expect(getDiagnosticsSnapshot().sse.eventCounts["session.status"]).toBe(1);
     });
 
     it("skips update when status type is unchanged", () => {
@@ -222,6 +229,11 @@ describe("sseDispatch", () => {
 
       const statuses = requireData(qc.getQueryData<Record<string, SessionStatus>>(qk.statuses));
       expect(statuses.s1.type).toBe("idle");
+      expect(getDiagnosticsSnapshot().lastStatusUpdate).toMatchObject({
+        sessionID: "s1",
+        statusType: "idle",
+      });
+      expect(getDiagnosticsSnapshot().sse.eventCounts["session.idle"]).toBe(1);
     });
 
     it("skips update when already idle", () => {

@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import LoadingScreen from "@/components/LoadingScreen";
+import { recordSseConnected, recordSseFailure, recordSseReconnecting } from "@/lib/diagnostics";
 import { qk } from "@/lib/queryKeys";
 import { sseDispatch } from "@/lib/sseDispatch";
 
@@ -158,6 +159,7 @@ export function OpenCodeClientProvider({
         const sseResult = await client.event.subscribe({});
         if (!sseResult?.stream) {
           consecutiveFailures++;
+          recordSseReconnecting(consecutiveFailures);
           if (consecutiveFailures >= SSE_FAILURE_THRESHOLD) showReconnectToast();
           if (!abortController.signal.aborted) {
             setTimeout(() => {
@@ -167,6 +169,7 @@ export function OpenCodeClientProvider({
           return;
         }
         consecutiveFailures = 0;
+        recordSseConnected();
         dismissReconnectToast();
 
         for await (const event of sseResult.stream) {
@@ -176,6 +179,7 @@ export function OpenCodeClientProvider({
 
         if (!abortController.signal.aborted) {
           consecutiveFailures++;
+          recordSseReconnecting(consecutiveFailures);
           if (consecutiveFailures >= SSE_FAILURE_THRESHOLD) showReconnectToast();
           setTimeout(() => {
             if (!abortController.signal.aborted) subscribe();
@@ -185,6 +189,7 @@ export function OpenCodeClientProvider({
         if (!abortController.signal.aborted) {
           console.error("SSE stream error:", err);
           consecutiveFailures++;
+          recordSseFailure(err, consecutiveFailures);
           if (consecutiveFailures >= SSE_FAILURE_THRESHOLD) showReconnectToast();
           setTimeout(() => {
             if (!abortController.signal.aborted) subscribe();

@@ -21,12 +21,15 @@ import {
   generateOpenRouterImage,
   loadOpenRouterImageConfig,
   makeImageResult,
+  normalizeImageGenerationSettings,
   saveOpenRouterApiKey,
 } from "@/lib/openRouterImages";
 import type {
   ImageGenerationSettings,
   ImageProject,
   ImageReference,
+  ImageResult,
+  ImageTurn,
   OpenRouterCredits,
   OpenRouterImageModel,
 } from "@/types/image";
@@ -68,6 +71,10 @@ function downloadDataUrl(dataUrl: string, filename: string) {
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
+}
+
+function imageDownloadFilename(modelId: string, index: number) {
+  return `bloxbot-${modelId.replace(/[^a-z0-9]+/gi, "-")}-${index + 1}.png`;
 }
 
 function projectPreview(project: ImageProject): string | null {
@@ -348,7 +355,10 @@ function ImageSettingsPanel({
   const costEstimate = selectedModel ? estimateOpenRouterImageCost(selectedModel, settings) : null;
 
   function patchSettings(patch: Partial<ImageGenerationSettings>) {
-    onSettingsChange({ ...settings, ...patch });
+    const nextSettings = { ...settings, ...patch };
+    onSettingsChange(
+      selectedModel ? normalizeImageGenerationSettings(selectedModel, nextSettings) : nextSettings,
+    );
   }
 
   if (!isOpen) {
@@ -603,9 +613,15 @@ function ImageMode() {
   const [settingsOpen, setSettingsOpen] = useState(true);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
+  const [pendingTurns, setPendingTurns] = useState<Record<string, ImageTurn[]>>({});
+  const [previewImage, setPreviewImage] = useState<{
+    result: ImageResult;
+    modelId: string;
+    index: number;
+  } | null>(null);
   const [settings, setSettings] = useState<ImageGenerationSettings>({
     aspectRatio: "1:1",
-    imageSize: "1024x1024",
+    imageSize: "1K",
     outputCount: 1,
   });
   const [references, setReferences] = useState<ImageReference[]>([]);
@@ -615,7 +631,11 @@ function ImageMode() {
   const selectedModel = models.find((model) => model.id === selectedModelId) ?? null;
   const allUsageRecords = projects.flatMap((project) => project.usageRecords);
   const localSpend = aggregateImageSpend(allUsageRecords);
-  const canSubmit = !!apiKey && !!activeProject && !!selectedModel && !!prompt.trim();
+  const activePendingTurns = activeProject ? (pendingTurns[activeProject.id] ?? []) : [];
+  const visibleTurns = activeProject ? [...activeProject.turns, ...activePendingTurns] : [];
+  const isGenerating = activePendingTurns.length > 0 || addGeneration.isPending;
+  const canSubmit =
+    !!apiKey && !!activeProject && !!selectedModel && !!prompt.trim() && !isGenerating;
 
   async function refreshOpenRouter(key = apiKey) {
     if (!key) return;
@@ -652,6 +672,21 @@ function ImageMode() {
       setActiveProjectId(projects[0]?.id ?? null);
     }
   }, [activeProjectId, projects]);
+
+  useEffect(() => {
+    if (!selectedModel) return;
+    setSettings((current) => {
+      const normalized = normalizeImageGenerationSettings(selectedModel, current);
+      if (
+        normalized.aspectRatio === current.aspectRatio &&
+        normalized.imageSize === current.imageSize &&
+        normalized.outputCount === current.outputCount
+      ) {
+        return current;
+      }
+      return normalized;
+    });
+  }, [selectedModel]);
 
   async function handleConnect() {
     const key = draftKey.trim();
@@ -729,11 +764,27 @@ function ImageMode() {
   }
 
   async function handleSubmit() {
-    if (!apiKey || !activeProject || !selectedModel || !prompt.trim()) return;
+    if (!apiKey || !activeProject || !selectedModel || !prompt.trim() || isGenerating) return;
     const requestPrompt = prompt.trim();
     const requestReferences = references;
+    const projectId = activeProject.id;
+    const pendingTurn = createImageTurn({
+      source: "openrouter",
+      prompt: requestPrompt,
+      openRouterModelId: selectedModel.id,
+      modelName: selectedModel.name,
+      settings,
+      references: requestReferences,
+      resultIds: [],
+      status: "pending",
+      statusMessage: "Request sent. OpenRouter is generating your image.",
+    });
     setPrompt("");
     setReferences([]);
+    setPendingTurns((current) => ({
+      ...current,
+      [projectId]: [...(current[projectId] ?? []), pendingTurn],
+    }));
 
     try {
       const response = await generateOpenRouterImage({
@@ -780,7 +831,7 @@ function ImageMode() {
         responseId: response.responseId,
       });
       await addGeneration.mutateAsync({
-        projectId: activeProject.id,
+        projectId,
         turn,
         results,
         usageRecord,
@@ -805,8 +856,13 @@ function ImageMode() {
         status: "failed",
         statusMessage: message,
       });
-      await addGeneration.mutateAsync({ projectId: activeProject.id, turn, results: [] });
+      await addGeneration.mutateAsync({ projectId, turn, results: [] });
       toast.error("Image generation failed", { description: message });
+    } finally {
+      setPendingTurns((current) => ({
+        ...current,
+        [projectId]: (current[projectId] ?? []).filter((turn) => turn.id !== pendingTurn.id),
+      }));
     }
   }
 
@@ -862,7 +918,7 @@ function ImageMode() {
         ) : (
           <>
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
-              {activeProject.turns.length === 0 ? (
+              {visibleTurns.length === 0 ? (
                 <div className="flex min-h-full items-center justify-center">
                   <div className="max-w-md text-center">
                     <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-lg border bg-card">
@@ -891,7 +947,7 @@ function ImageMode() {
                 </div>
               ) : (
                 <div className="mx-auto max-w-5xl space-y-4">
-                  {activeProject.turns.map((turn) => {
+                  {visibleTurns.map((turn) => {
                     const results = activeProject.results.filter((result) =>
                       turn.resultIds.includes(result.id),
                     );
@@ -907,38 +963,72 @@ function ImageMode() {
                             </div>
                             <p className="mt-1 text-sm leading-relaxed">{turn.prompt}</p>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => reuseTurn(turn.prompt, turn.settings)}
-                            className="h-7 shrink-0 rounded-md border px-2 text-[11px] font-medium hover:bg-accent"
-                          >
-                            Reuse
-                          </button>
+                          {turn.status !== "pending" && (
+                            <button
+                              type="button"
+                              onClick={() => reuseTurn(turn.prompt, turn.settings)}
+                              className="h-7 shrink-0 rounded-md border px-2 text-[11px] font-medium hover:bg-accent"
+                            >
+                              Reuse
+                            </button>
+                          )}
                         </div>
+                        {turn.status === "pending" && (
+                          <div className="mt-3 rounded-lg border bg-background/70 p-3">
+                            <div className="flex items-center gap-2 text-xs font-medium">
+                              <span className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
+                              Generating image
+                            </div>
+                            <div className="mt-1 text-[11px] text-muted-foreground">
+                              OpenRouter accepted the request. This can take a little while for
+                              image models.
+                            </div>
+                          </div>
+                        )}
                         {results.length > 0 && (
                           <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3">
                             {results.map((result, index) => (
-                              <button
-                                type="button"
+                              <div
                                 key={result.id}
-                                onClick={() =>
-                                  downloadDataUrl(
-                                    result.dataUrl,
-                                    `bloxbot-${turn.openRouterModelId.replace(/[^a-z0-9]+/gi, "-")}-${index + 1}.png`,
-                                  )
-                                }
-                                className="group overflow-hidden rounded-lg border bg-background text-left"
-                                title="Download image"
+                                className="group overflow-hidden rounded-lg border bg-background"
                               >
-                                <img
-                                  src={result.dataUrl}
-                                  alt={result.prompt}
-                                  className="aspect-square w-full object-cover transition-opacity group-hover:opacity-90"
-                                />
-                                <div className="truncate px-2 py-1 text-[10px] text-muted-foreground">
-                                  Download
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setPreviewImage({
+                                      result,
+                                      modelId: turn.openRouterModelId,
+                                      index,
+                                    })
+                                  }
+                                  className="block w-full"
+                                  title="Open image preview"
+                                >
+                                  <img
+                                    src={result.dataUrl}
+                                    alt={result.prompt}
+                                    className="aspect-square w-full object-cover transition-opacity group-hover:opacity-90"
+                                  />
+                                </button>
+                                <div className="flex items-center justify-between gap-2 border-t px-2 py-1">
+                                  <div className="min-w-0 truncate text-[10px] text-muted-foreground">
+                                    Preview
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      downloadDataUrl(
+                                        result.dataUrl,
+                                        imageDownloadFilename(turn.openRouterModelId, index),
+                                      )
+                                    }
+                                    className="h-6 rounded border px-2 text-[10px] font-medium hover:bg-accent"
+                                    title="Download image"
+                                  >
+                                    Download
+                                  </button>
                                 </div>
-                              </button>
+                              </div>
                             ))}
                           </div>
                         )}
@@ -1067,7 +1157,7 @@ function ImageMode() {
                   <button
                     type="button"
                     onClick={handleSubmit}
-                    disabled={!canSubmit || addGeneration.isPending}
+                    disabled={!canSubmit}
                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-foreground text-background transition-opacity disabled:opacity-30"
                     title="Generate with OpenRouter"
                   >
@@ -1118,6 +1208,57 @@ function ImageMode() {
         onSortMode={setSortMode}
         onToggle={() => setSettingsOpen((prev) => !prev)}
       />
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setPreviewImage(null)}
+        >
+          <div
+            className="flex max-h-full w-full max-w-5xl flex-col overflow-hidden rounded-lg border bg-card shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3 border-b px-3 py-2">
+              <div className="min-w-0 truncate text-xs font-medium">
+                {previewImage.result.prompt}
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    downloadDataUrl(
+                      previewImage.result.dataUrl,
+                      imageDownloadFilename(previewImage.modelId, previewImage.index),
+                    )
+                  }
+                  className="h-7 rounded-md border px-2 text-[11px] font-medium hover:bg-accent"
+                >
+                  Download
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewImage(null)}
+                  className="flex h-7 w-7 items-center justify-center rounded-md border text-muted-foreground hover:bg-accent hover:text-foreground"
+                  title="Close preview"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <line x1="18" y1="6" x2="6" y2="18" strokeWidth="2.5" strokeLinecap="round" />
+                    <line x1="6" y1="6" x2="18" y2="18" strokeWidth="2.5" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto bg-background p-3">
+              <img
+                src={previewImage.result.dataUrl}
+                alt={previewImage.result.prompt}
+                className="mx-auto max-h-[78vh] max-w-full rounded-md object-contain"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

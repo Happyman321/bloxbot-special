@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   aggregateImageSpend,
   estimateOpenRouterImageCost,
   filterAndSortOpenRouterImageModels,
   formatOpenRouterPrice,
+  generateOpenRouterImage,
+  normalizeImageGenerationSettings,
   normalizeOpenRouterImageModel,
   parseOpenRouterImageResponse,
 } from "@/lib/openRouterImages";
@@ -39,6 +41,28 @@ describe("OpenRouter image helpers", () => {
     expect(normalized?.id).toBe("black-forest-labs/flux-schnell");
     expect(normalized?.providerName).toBe("black-forest-labs");
     expect(normalized?.supportsReferenceImages).toBe(false);
+    expect(normalized?.supportedImageSizes).toEqual(["1K", "2K", "4K"]);
+  });
+
+  it("uses OpenAI image configuration values accepted by OpenRouter", () => {
+    const normalized = normalizeOpenRouterImageModel({
+      id: "openai/gpt-image-2",
+      name: "GPT Image 2",
+      architecture: {
+        input_modalities: ["text", "image"],
+        output_modalities: ["image"],
+      },
+    });
+
+    expect(normalized?.supportedImageSizes).toEqual(["1K", "2K"]);
+    expect(
+      normalized &&
+        normalizeImageGenerationSettings(normalized, {
+          aspectRatio: "1:1",
+          imageSize: "1024x1024",
+          outputCount: 1,
+        }),
+    ).toMatchObject({ aspectRatio: "1:1", imageSize: "1K" });
   });
 
   it("drops non-image models", () => {
@@ -116,6 +140,46 @@ describe("OpenRouter image helpers", () => {
     expect(parsed.responseId).toBe("gen_123");
     expect(parsed.cost).toBe(0.05);
     expect(parsed.images).toEqual([{ dataUrl: "data:image/png;base64,AAAA", mime: "image/png" }]);
+  });
+
+  it("sends normalized OpenAI image_size values to OpenRouter", async () => {
+    const requests: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push(init?.body ? JSON.parse(String(init.body)) : null);
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  images: [{ image_url: { url: "data:image/png;base64,AAAA" } }],
+                },
+              },
+            ],
+          }),
+        );
+      }),
+    );
+
+    await generateOpenRouterImage({
+      apiKey: "sk-or-test",
+      model: model({
+        id: "openai/gpt-image-2",
+        providerName: "OpenAI",
+        supportedImageSizes: ["1K", "2K"],
+      }),
+      prompt: "test",
+      settings: { aspectRatio: "1:1", imageSize: "1024x1024", outputCount: 1 },
+      references: [],
+    });
+
+    expect(requests[0]).toMatchObject({
+      image_config: {
+        aspect_ratio: "1:1",
+        image_size: "1K",
+      },
+    });
   });
 
   it("aggregates local spend by time window", () => {

@@ -17,7 +17,13 @@ function wrapper() {
   };
 }
 
-function mockOpenRouterFetch({ generationFails = false } = {}) {
+function mockOpenRouterFetch({
+  generationFails = false,
+  generationDelayMs = 0,
+}: {
+  generationFails?: boolean;
+  generationDelayMs?: number;
+} = {}) {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.includes("/models")) {
@@ -43,6 +49,9 @@ function mockOpenRouterFetch({ generationFails = false } = {}) {
       return new Response(JSON.stringify({ data: { total_credits: 10, total_usage: 2.5 } }));
     }
     if (url.includes("/chat/completions")) {
+      if (generationDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, generationDelayMs));
+      }
       if (generationFails) {
         return new Response(JSON.stringify({ error: { message: "blocked" } }), { status: 400 });
       }
@@ -108,6 +117,43 @@ describe("ImageMode", () => {
       imageDataUrl,
     );
     expect(screen.getAllByText("$0.0200").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByTitle("Open image preview"));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Download" }).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByTitle("Close preview"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("shows a pending image request while OpenRouter is still generating", async () => {
+    vi.stubGlobal("fetch", mockOpenRouterFetch({ generationDelayMs: 100 }));
+    render(<ImageMode />, { wrapper: wrapper() });
+
+    fireEvent.change(await screen.findByPlaceholderText("sk-or-..."), {
+      target: { value: "sk-or-test" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await waitFor(() => {
+      expect(screen.getAllByText("openai/gpt-image-2").length).toBeGreaterThan(0);
+    });
+
+    fireEvent.click(screen.getByText("New image project"));
+    fireEvent.change(
+      await screen.findByPlaceholderText("Describe the image, or paste reference images here..."),
+      {
+        target: { value: "A glowing Roblox portal" },
+      },
+    );
+    fireEvent.click(screen.getByTitle("Generate with OpenRouter"));
+
+    expect(await screen.findByText("Generating image")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "OpenRouter accepted the request. This can take a little while for image models.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByTitle("Generate with OpenRouter")).toBeDisabled();
+    expect(await screen.findByText("Generated 1 image through OpenRouter.")).toBeInTheDocument();
   });
 
   it("accepts pasted reference images in the prompt", async () => {

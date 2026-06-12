@@ -10,6 +10,7 @@ import type { QueryClient } from "@tanstack/react-query";
 
 import { claimDictatorManagedSession, type DictatorProfile } from "@/lib/dictators";
 import { upsertSessionById } from "@/lib/dictatorWorkers";
+import { recordSessionStatus, recordSseEvent } from "@/lib/diagnostics";
 import { qk } from "@/lib/queryKeys";
 import type { MessageWithParts } from "@/types";
 
@@ -77,6 +78,7 @@ export function sseDispatch(
   if (!event || !event.type) return;
 
   const currentSessionId = activeSessionIdRef.current;
+  recordSseEvent(event);
 
   try {
     switch (event.type) {
@@ -109,6 +111,7 @@ export function sseDispatch(
       }
       case "session.status": {
         const { sessionID, status } = event.properties;
+        recordSessionStatus(sessionID, status.type);
         queryClient.setQueryData<Record<string, SessionStatus>>(qk.statuses, (prev) => {
           if (prev?.[sessionID]?.type === status.type) return prev;
           return { ...prev, [sessionID]: status };
@@ -117,6 +120,7 @@ export function sseDispatch(
       }
       case "session.idle": {
         const { sessionID } = event.properties;
+        recordSessionStatus(sessionID, "idle");
         queryClient.setQueryData<Record<string, SessionStatus>>(qk.statuses, (prev) => {
           if (prev?.[sessionID]?.type === "idle") return prev;
           return { ...prev, [sessionID]: { type: "idle" } as SessionStatus };

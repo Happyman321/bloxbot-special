@@ -12,7 +12,22 @@ const configStore = new LazyStore("bloxbot-openrouter-images.json");
 const API_KEY = "openRouterApiKey";
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 const DEFAULT_ASPECT_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"];
-const DEFAULT_IMAGE_SIZES = ["1024x1024", "1344x768", "768x1344", "1184x864", "864x1184"];
+const EXTENDED_GEMINI_ASPECT_RATIOS = ["1:4", "4:1", "1:8", "8:1"];
+const DEFAULT_IMAGE_SIZES = ["1K", "2K", "4K"];
+const OPENAI_IMAGE_SIZES = ["1K", "2K"];
+const LEGACY_PIXEL_SIZE_TO_OPENROUTER_SIZE: Record<string, string> = {
+  "1024x1024": "1K",
+  "1344x768": "1K",
+  "768x1344": "1K",
+  "1184x864": "1K",
+  "864x1184": "1K",
+  "1536x1024": "1K",
+  "1024x1536": "1K",
+  "2048x2048": "2K",
+  "2048x1152": "2K",
+  "3840x2160": "4K",
+  "2160x3840": "4K",
+};
 const ESTIMATED_PROMPT_TOKENS = 300;
 const ESTIMATED_IMAGE_OUTPUT_TOKENS = 4000;
 
@@ -96,6 +111,25 @@ function formatDollars(value: number): string {
   return "$0.0000";
 }
 
+function getModelImageCapabilities(id: string) {
+  if (id.startsWith("openai/")) {
+    return {
+      supportedAspectRatios: DEFAULT_ASPECT_RATIOS,
+      supportedImageSizes: OPENAI_IMAGE_SIZES,
+    };
+  }
+  if (id === "google/gemini-3.1-flash-image-preview") {
+    return {
+      supportedAspectRatios: [...DEFAULT_ASPECT_RATIOS, ...EXTENDED_GEMINI_ASPECT_RATIOS],
+      supportedImageSizes: ["0.5K", ...DEFAULT_IMAGE_SIZES],
+    };
+  }
+  return {
+    supportedAspectRatios: DEFAULT_ASPECT_RATIOS,
+    supportedImageSizes: DEFAULT_IMAGE_SIZES,
+  };
+}
+
 export function normalizeOpenRouterImageModel(
   raw: OpenRouterModelPayload,
 ): OpenRouterImageModel | null {
@@ -107,6 +141,7 @@ export function normalizeOpenRouterImageModel(
     raw.output_modalities ?? raw.architecture?.output_modalities,
   );
   if (!outputModalities.includes("image")) return null;
+  const capabilities = getModelImageCapabilities(raw.id);
 
   return {
     id: raw.id,
@@ -116,9 +151,32 @@ export function normalizeOpenRouterImageModel(
     pricing: raw.pricing,
     inputModalities,
     outputModalities,
-    supportedAspectRatios: DEFAULT_ASPECT_RATIOS,
-    supportedImageSizes: DEFAULT_IMAGE_SIZES,
+    supportedAspectRatios: capabilities.supportedAspectRatios,
+    supportedImageSizes: capabilities.supportedImageSizes,
     supportsReferenceImages: inputModalities.includes("image"),
+  };
+}
+
+export function normalizeImageGenerationSettings(
+  model: OpenRouterImageModel,
+  settings: ImageGenerationSettings,
+): ImageGenerationSettings {
+  const imageSize =
+    settings.imageSize && model.supportedImageSizes.includes(settings.imageSize)
+      ? settings.imageSize
+      : settings.imageSize
+        ? LEGACY_PIXEL_SIZE_TO_OPENROUTER_SIZE[settings.imageSize]
+        : undefined;
+  return {
+    aspectRatio:
+      settings.aspectRatio && model.supportedAspectRatios.includes(settings.aspectRatio)
+        ? settings.aspectRatio
+        : model.supportedAspectRatios[0],
+    imageSize:
+      imageSize && model.supportedImageSizes.includes(imageSize)
+        ? imageSize
+        : model.supportedImageSizes[0],
+    outputCount: settings.outputCount,
   };
 }
 
@@ -277,6 +335,7 @@ export function parseOpenRouterImageResponse(payload: unknown): OpenRouterGenera
 export async function generateOpenRouterImage(
   input: OpenRouterGenerateInput,
 ): Promise<OpenRouterGenerateResult> {
+  const settings = normalizeImageGenerationSettings(input.model, input.settings);
   const content =
     input.references.length > 0
       ? [
@@ -290,10 +349,10 @@ export async function generateOpenRouterImage(
 
   const modalities = input.model.outputModalities.includes("text") ? ["image", "text"] : ["image"];
   const imageConfig: Record<string, string | number> = {};
-  if (input.settings.aspectRatio) imageConfig.aspect_ratio = input.settings.aspectRatio;
-  if (input.settings.imageSize) imageConfig.image_size = input.settings.imageSize;
-  if (input.settings.outputCount && input.settings.outputCount > 1) {
-    imageConfig.num_images = input.settings.outputCount;
+  if (settings.aspectRatio) imageConfig.aspect_ratio = settings.aspectRatio;
+  if (settings.imageSize) imageConfig.image_size = settings.imageSize;
+  if (settings.outputCount && settings.outputCount > 1) {
+    imageConfig.num_images = settings.outputCount;
   }
 
   const response = await fetch(`${OPENROUTER_BASE}/chat/completions`, {

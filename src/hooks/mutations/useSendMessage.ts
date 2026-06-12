@@ -2,6 +2,7 @@ import { usePostHog } from "@posthog/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { qk } from "@/lib/queryKeys";
+import { recordPromptFailure, recordPromptStart, recordPromptSuccess } from "@/lib/diagnostics";
 import { splitModelKey } from "@/lib/splitModelKey";
 import type { MessagesCache } from "@/lib/sseDispatch";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
@@ -68,8 +69,11 @@ export function useSendMessage() {
         parts,
       };
 
+      let providerID: string | undefined;
+      let modelID: string | undefined;
+
       if (selectedModel) {
-        const [providerID, modelID] = splitModelKey(selectedModel);
+        [providerID, modelID] = splitModelKey(selectedModel);
         if (providerID && modelID) {
           opts.model = { providerID, modelID };
         }
@@ -78,11 +82,22 @@ export function useSendMessage() {
       if (selectedAgent) opts.agent = selectedAgent;
       if (selectedVariant) opts.variant = selectedVariant;
 
-      await client.session.promptAsync(opts as Parameters<typeof client.session.promptAsync>[0]);
-      posthog.capture("message_sent", {
-        model: selectedModel ?? undefined,
-        agent: selectedAgent ?? undefined,
+      recordPromptStart({
+        sessionID: activeSessionId,
+        providerID: providerID ?? null,
+        modelID: modelID ?? null,
       });
+      try {
+        await client.session.promptAsync(opts as Parameters<typeof client.session.promptAsync>[0]);
+        recordPromptSuccess();
+        posthog.capture("message_sent", {
+          model: selectedModel ?? undefined,
+          agent: selectedAgent ?? undefined,
+        });
+      } catch (error) {
+        recordPromptFailure(error);
+        throw error;
+      }
     },
   });
 }
