@@ -7,6 +7,7 @@
 
 import type { Session, SessionStatus } from "@opencode-ai/sdk/v2/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { invoke } from "@tauri-apps/api/core";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -181,6 +182,12 @@ function TestChatInput({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(invoke).mockImplementation(async (command: string) => {
+    if (command === "get_opencode_info") return [4096, ""];
+    if (command === "get_vscode_bridge_info") return { port: 59300, token: "test-token" };
+    if (command === "list_roblox_studios") return [];
+    return undefined;
+  });
 });
 
 afterEach(() => {
@@ -434,16 +441,9 @@ describe("ChatInput", () => {
     expect(await screen.findByTitle("Attach images")).toBeInTheDocument();
   });
 
-  it("detects studio IDs from MCP status and renders them in picker", async () => {
+  it("detects studio IDs from the backend command and renders them in picker", async () => {
     const client = createClient();
-    client.mcp.status = vi.fn().mockResolvedValue({
-      data: {
-        "roblox-studio": {
-          status: "connected",
-          studios: [{ studio_id: 12345 }],
-        },
-      },
-    });
+    vi.mocked(invoke).mockResolvedValueOnce([{ id: "12345", label: "Main Place" }]);
     const qc = createQueryClient();
 
     render(<TestChatInput client={client} queryClient={qc} />);
@@ -451,21 +451,15 @@ describe("ChatInput", () => {
     fireEvent.click(await screen.findByTitle("Pick a Roblox Studio instance"));
 
     await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("list_roblox_studios");
+      expect(screen.getByText("Main Place")).toBeInTheDocument();
       expect(screen.getByText("12345")).toBeInTheDocument();
     });
   });
 
-  it("detects studio IDs embedded in MCP status messages", async () => {
-    const studioId = "2a19ebf2-6510-4a5e-be92-3e8c2e2fce62";
+  it("shows the empty state when the backend command returns no active studios", async () => {
     const client = createClient();
-    client.mcp.status = vi.fn().mockResolvedValue({
-      data: {
-        "roblox-studio": {
-          status: "connected",
-          note: `Active studio set to Tha Blox (${studioId})`,
-        },
-      },
-    });
+    vi.mocked(invoke).mockResolvedValueOnce([]);
     const qc = createQueryClient();
 
     render(<TestChatInput client={client} queryClient={qc} />);
@@ -473,20 +467,13 @@ describe("ChatInput", () => {
     fireEvent.click(await screen.findByTitle("Pick a Roblox Studio instance"));
 
     await waitFor(() => {
-      expect(screen.getByText(studioId)).toBeInTheDocument();
+      expect(screen.getByText("No active Studio sessions detected yet.")).toBeInTheDocument();
     });
   });
 
-  it("extracts studio IDs from instances collections", async () => {
+  it("falls back to the empty state when Studio detection fails", async () => {
     const client = createClient();
-    client.mcp.status = vi.fn().mockResolvedValue({
-      data: {
-        "roblox-studio": {
-          status: "connected",
-          instances: [{ id: 67890 }],
-        },
-      },
-    });
+    vi.mocked(invoke).mockRejectedValueOnce(new Error("Studio MCP unavailable"));
     const qc = createQueryClient();
 
     render(<TestChatInput client={client} queryClient={qc} />);
@@ -494,33 +481,27 @@ describe("ChatInput", () => {
     fireEvent.click(await screen.findByTitle("Pick a Roblox Studio instance"));
 
     await waitFor(() => {
-      expect(screen.getByText("67890")).toBeInTheDocument();
+      expect(screen.getByText("No active Studio sessions detected yet.")).toBeInTheDocument();
     });
   });
 
-  it("attempts to connect roblox-studio when status payload is missing", async () => {
+  it("keeps manually remembered studio IDs in the picker", async () => {
     const client = createClient();
-    client.mcp.status = vi
-      .fn()
-      .mockResolvedValueOnce({ data: {} })
-      .mockResolvedValueOnce({
-        data: {
-          "roblox-studio": {
-            status: "connected",
-            studios: [{ studio_id: 13579 }],
-          },
-        },
-      });
-    client.mcp.connect = vi.fn().mockResolvedValue({});
+    vi.mocked(invoke).mockResolvedValueOnce([]);
     const qc = createQueryClient();
 
-    render(<TestChatInput client={client} queryClient={qc} />);
+    render(
+      <TestChatInput
+        client={client}
+        queryClient={qc}
+        seedOverrides={{ config: { knownStudioIds: ["manual-studio"] } }}
+      />,
+    );
 
     fireEvent.click(await screen.findByTitle("Pick a Roblox Studio instance"));
 
     await waitFor(() => {
-      expect(client.mcp.connect).toHaveBeenCalledWith({ name: "roblox-studio" });
-      expect(screen.getByText("13579")).toBeInTheDocument();
+      expect(screen.getByText("Studio manual-studio")).toBeInTheDocument();
     });
   });
 });

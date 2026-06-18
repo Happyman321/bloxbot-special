@@ -1,6 +1,7 @@
 mod logging;
 mod opencode;
 mod paths;
+mod vscode_bridge;
 
 use opencode::SharedOpenCodeState;
 use std::sync::Arc;
@@ -15,6 +16,8 @@ pub fn run() {
 
     let opencode_state: SharedOpenCodeState =
         Arc::new(Mutex::new(opencode::OpenCodeState::default()));
+    let vscode_bridge_state: vscode_bridge::SharedVscodeBridgeState =
+        Arc::new(Mutex::new(vscode_bridge::VscodeBridgeState::default()));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -22,7 +25,12 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(opencode_state)
-        .invoke_handler(tauri::generate_handler![opencode::get_opencode_info])
+        .manage(vscode_bridge_state)
+        .invoke_handler(tauri::generate_handler![
+            opencode::get_opencode_info,
+            opencode::list_roblox_studios,
+            vscode_bridge::get_vscode_bridge_info
+        ])
         .setup(|app| {
             // ── Application menu ──────────────────────────────────
             let app_submenu = SubmenuBuilder::new(app, "BloxBot")
@@ -95,9 +103,16 @@ pub fn run() {
             // The window stays hidden until OpenCode is alive.
             // If it can't start after retries, exit — there's nothing to show.
             let state = app.state::<SharedOpenCodeState>().inner().clone();
+            let bridge_state = app
+                .state::<vscode_bridge::SharedVscodeBridgeState>()
+                .inner()
+                .clone();
             let handle = app.handle().clone();
             log::info!("BloxBot starting up");
             tauri::async_runtime::spawn(async move {
+                if let Err(e) = vscode_bridge::start_vscode_bridge(bridge_state).await {
+                    log::error!("VS Code bridge failed to start: {e}");
+                }
                 match opencode::start_opencode_server(state, handle.clone()).await {
                     Ok(port) => {
                         log::info!("OpenCode ready on port {port}, showing window");

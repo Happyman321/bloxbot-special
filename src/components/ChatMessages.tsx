@@ -6,9 +6,18 @@ import type {
   Todo,
 } from "@opencode-ai/sdk/v2/client";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import {
+  isValidElement,
+  memo,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { toast } from "sonner";
 
 /** Module-level constant to avoid creating a new array on every render. */
 const REMARK_PLUGINS = [remarkGfm];
@@ -259,6 +268,28 @@ function inputField(input: Record<string, unknown>, key: string): string {
   if (typeof val === "string") return val;
   if (val !== undefined && val !== null) return JSON.stringify(val);
   return "";
+}
+
+function markdownChildrenToText(children: ReactNode): string {
+  if (children === null || children === undefined || typeof children === "boolean") {
+    return "";
+  }
+  if (typeof children === "string" || typeof children === "number") return String(children);
+  if (Array.isArray(children)) return children.map(markdownChildrenToText).join("");
+  if (isValidElement<{ children?: ReactNode }>(children)) {
+    return markdownChildrenToText(children.props.children);
+  }
+  return "";
+}
+
+async function copyCodeBlock(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success("Code copied");
+  } catch (err) {
+    console.error("[chat] Failed to copy code block:", err);
+    toast.error("Could not copy code");
+  }
 }
 
 // ── Tool-specific renderers ─────────────────────────────────────────────
@@ -773,13 +804,37 @@ const markdownComponents: Components = {
     const isBlock = className?.includes("language-");
     if (isBlock) {
       const lang = className?.replace("language-", "") ?? "";
+      const codeText = markdownChildrenToText(children);
       return (
         <div className="mb-2 overflow-hidden rounded-md border border-stone-200 last:mb-0">
-          {lang && (
-            <div className="border-b border-stone-200 bg-stone-100 px-2.5 py-1 text-[10px] font-medium text-muted-foreground">
-              {lang}
-            </div>
-          )}
+          <div className="flex items-center justify-between gap-2 border-b border-stone-200 bg-stone-100 px-2.5 py-1">
+            <span className="min-w-0 truncate text-[10px] font-medium text-muted-foreground">
+              {lang || "code"}
+            </span>
+            <button
+              type="button"
+              title="Copy code"
+              onClick={() => void copyCodeBlock(codeText)}
+              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded
+                text-muted-foreground transition-colors hover:bg-stone-200 hover:text-foreground"
+            >
+              <svg
+                aria-hidden="true"
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+              <span className="sr-only">Copy code</span>
+            </button>
+          </div>
           <pre className="overflow-x-auto bg-stone-900 px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-stone-100">
             <code>{children}</code>
           </pre>
@@ -1131,11 +1186,11 @@ const QuestionPrompt = memo(function QuestionPrompt({
   }
 
   return (
-    <div className="animate-fade-in-up my-2 rounded-lg border border-blue-200 bg-blue-50/30 px-3 py-3">
+    <div className="animate-fade-in-up my-2 rounded-lg border bg-card px-3 py-3 shadow-sm">
       {question.questions.map((q, qIdx) => (
-        <div key={qIdx} className={qIdx > 0 ? "mt-3 border-t border-blue-100 pt-3" : ""}>
-          <div className="text-[11px] font-semibold text-foreground">{q.header}</div>
-          <div className="mt-0.5 text-[12px] text-foreground">{q.question}</div>
+        <div key={qIdx} className={qIdx > 0 ? "mt-3 border-t pt-3" : ""}>
+          <div className="text-[11px] font-semibold text-muted-foreground">{q.header}</div>
+          <div className="mt-0.5 text-[12px] font-medium text-card-foreground">{q.question}</div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {q.options.map((opt) => {
               const isSelected = selected[qIdx]?.has(opt.label);
@@ -1143,7 +1198,11 @@ const QuestionPrompt = memo(function QuestionPrompt({
                 <button
                   key={opt.label}
                   onClick={() => toggleOption(qIdx, opt.label, q.multiple)}
-                  className={`rounded-md border px-2.5 py-1 text-[11px] transition-colors ${isSelected ? "border-blue-400 bg-blue-100 text-blue-800" : "border-stone-200 bg-white text-foreground hover:border-blue-300 hover:bg-blue-50"}`}
+                  className={`rounded-md border px-2.5 py-1 text-[11px] transition-colors ${
+                    isSelected
+                      ? "border-primary/60 bg-primary text-primary-foreground"
+                      : "bg-background text-foreground hover:bg-accent hover:text-accent-foreground"
+                  }`}
                   title={opt.description}
                 >
                   {opt.label}
@@ -1157,7 +1216,7 @@ const QuestionPrompt = memo(function QuestionPrompt({
               placeholder="Type your own answer..."
               value={customInputs[qIdx] ?? ""}
               onChange={(e) => setCustomInputs((prev) => ({ ...prev, [qIdx]: e.target.value }))}
-              className="mt-2 w-full rounded border bg-white px-2 py-1 text-[11px] placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-blue-300"
+              className="mt-2 w-full rounded border bg-background px-2 py-1 text-[11px] text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
             />
           )}
         </div>
@@ -1165,7 +1224,7 @@ const QuestionPrompt = memo(function QuestionPrompt({
       <div className="mt-3 flex items-center gap-2">
         <button
           onClick={submit}
-          className="rounded-md bg-foreground px-3 py-1 text-[11px] font-medium text-background transition-opacity hover:opacity-90"
+          className="rounded-md bg-primary px-3 py-1 text-[11px] font-medium text-primary-foreground transition-opacity hover:opacity-90"
         >
           Submit
         </button>
@@ -1190,10 +1249,10 @@ const PermissionPrompt = memo(function PermissionPrompt({
   onReply: (requestID: string, reply: "once" | "always" | "reject") => void;
 }) {
   return (
-    <div className="animate-fade-in-up my-2 rounded-lg border border-amber-200 bg-amber-50/30 px-3 py-3">
-      <div className="text-[11px] font-semibold text-foreground">Permission Required</div>
-      <div className="mt-1 text-[12px] text-foreground">
-        <span className="font-mono text-amber-700">{permission.permission}</span>
+    <div className="animate-fade-in-up my-2 rounded-lg border bg-card px-3 py-3 shadow-sm">
+      <div className="text-[11px] font-semibold text-muted-foreground">Permission Required</div>
+      <div className="mt-1 text-[12px] text-card-foreground">
+        <span className="font-mono">{permission.permission}</span>
       </div>
       {permission.patterns.length > 0 && (
         <div className="mt-1 space-y-0.5">
@@ -1207,7 +1266,7 @@ const PermissionPrompt = memo(function PermissionPrompt({
       <div className="mt-3 flex items-center gap-2">
         <button
           onClick={() => onReply(permission.id, "once")}
-          className="rounded-md bg-foreground px-3 py-1 text-[11px] font-medium text-background transition-opacity hover:opacity-90"
+          className="rounded-md bg-primary px-3 py-1 text-[11px] font-medium text-primary-foreground transition-opacity hover:opacity-90"
         >
           Allow Once
         </button>

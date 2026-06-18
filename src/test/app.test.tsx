@@ -274,6 +274,11 @@ describe("User journeys", () => {
 
   it("sends a message and shows the assistant response via SSE", async () => {
     const session = makeSession("s1", "My Session");
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
     const client = createClient({
       create: vi.fn().mockResolvedValue({ data: session }),
       get: vi.fn().mockResolvedValue({ data: session }),
@@ -348,7 +353,7 @@ describe("User journeys", () => {
               messageID: "msg_1",
               sessionID: "s1",
               type: "text",
-              text: "I'll create a Roblox obby for you!",
+              text: 'I\'ll create a Roblox obby for you!\n\n```lua\nprint("hello")\n```',
               time: { created: Date.now(), updated: Date.now() },
             },
           },
@@ -361,6 +366,12 @@ describe("User journeys", () => {
     await waitFor(() => {
       expect(screen.getByText(/I'll create a Roblox obby for you!/)).toBeInTheDocument();
     });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTitle("Copy code"));
+    });
+
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('print("hello")'));
   });
 
   it("shows permission prompt and user can approve it", async () => {

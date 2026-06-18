@@ -1,8 +1,7 @@
 import { usePostHog } from "@posthog/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-
-import { qk } from "@/lib/queryKeys";
 import { recordPromptFailure, recordPromptStart, recordPromptSuccess } from "@/lib/diagnostics";
+import { qk } from "@/lib/queryKeys";
 import { splitModelKey } from "@/lib/splitModelKey";
 import type { MessagesCache } from "@/lib/sseDispatch";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
@@ -25,6 +24,7 @@ export function useSendMessage() {
     preferredStudioId,
     sessionFolderById,
     folderInstructionsByName,
+    workspaceSettingsByName,
   } = usePreferences();
   const posthog = usePostHog();
 
@@ -41,14 +41,34 @@ export function useSendMessage() {
       }
 
       const activeFolder = sessionFolderById[activeSessionId];
+      const activeWorkspaceSettings = activeFolder
+        ? workspaceSettingsByName[activeFolder]
+        : undefined;
       const cachedMessages = queryClient.getQueryData<MessagesCache>(qk.messages(activeSessionId));
       const isFirstChatMessage = (cachedMessages?.messageIds.length ?? 0) === 0;
 
       if (activeFolder && isFirstChatMessage) {
-        const folderInstructions = folderInstructionsByName[activeFolder]?.trim();
+        const folderInstructions =
+          activeWorkspaceSettings?.instructions.trim() ??
+          folderInstructionsByName[activeFolder]?.trim();
         if (folderInstructions) {
           messagePrefixes.push(
             `[Workspace Instructions: ${activeFolder}] Follow these project-specific instructions for this request:\n${folderInstructions}`,
+          );
+        }
+        if (activeWorkspaceSettings?.type === "vscode") {
+          const companionStatus = activeWorkspaceSettings.vscodeCompanionEnabled
+            ? "enabled"
+            : "disabled";
+          messagePrefixes.push(
+            [
+              `[VS Code Workspace: ${activeFolder}]`,
+              `Project folder: ${activeWorkspaceSettings.vscodePath || "(not configured)"}`,
+              `Companion mode: ${companionStatus}.`,
+              "Default to a plan/review workflow before editing project files.",
+              "Use Roblox Studio MCP tools for context when useful, but avoid Studio mutations unless the user clearly asks.",
+              "For project file work, prefer the BloxBot VS Code MCP tools. Propose changes for VS Code review and wait for approval before claiming files were changed.",
+            ].join("\n"),
           );
         }
       }
@@ -79,7 +99,11 @@ export function useSendMessage() {
         }
       }
 
-      if (selectedAgent) opts.agent = selectedAgent;
+      if (activeWorkspaceSettings?.type === "vscode") {
+        opts.agent = activeWorkspaceSettings.defaultAgent ?? "vscode-workspace";
+      } else if (selectedAgent) {
+        opts.agent = selectedAgent;
+      }
       if (selectedVariant) opts.variant = selectedVariant;
 
       recordPromptStart({

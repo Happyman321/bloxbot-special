@@ -7,10 +7,23 @@
 //! If the sidecar can't start, the app exits.
 
 use std::sync::Arc;
+use std::process::Stdio;
 use tauri::AppHandle;
+use tauri::Manager;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::process::{ChildStdout, Command};
 use tokio::sync::Mutex;
+use tokio::time::{timeout, Duration};
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StudioInstance {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
 
 /// BloxBot's reserved port range within the IANA dynamic/private range
 /// (49152-65535). The block is 10 ports; the app binds to the first
@@ -95,6 +108,27 @@ fn studio_mcp_command() -> Vec<String> {
     }
 }
 
+fn vscode_mcp_command(nodejs_bin_dir: &std::path::Path) -> Result<Vec<String>, String> {
+    #[cfg(target_os = "windows")]
+    let node_path = nodejs_bin_dir.join("node.exe");
+    #[cfg(not(target_os = "windows"))]
+    let node_path = nodejs_bin_dir.join("node");
+
+    let server_path = crate::paths::bundled_vscode_mcp_server_path()?;
+
+    #[cfg(target_os = "windows")]
+    let node = strip_win_prefix(&node_path);
+    #[cfg(not(target_os = "windows"))]
+    let node = node_path.to_string_lossy().to_string();
+
+    #[cfg(target_os = "windows")]
+    let server = strip_win_prefix(&server_path);
+    #[cfg(not(target_os = "windows"))]
+    let server = server_path.to_string_lossy().to_string();
+
+    Ok(vec![node, server])
+}
+
 // ── Startup cleanup ─────────────────────────────────────────────────────
 
 /// Kill any stale processes listening on our reserved port range.
@@ -175,6 +209,21 @@ pub async fn get_opencode_info(
     Ok((s.port, s.workspace.clone()))
 }
 
+#[tauri::command]
+pub async fn list_roblox_studios() -> Result<Vec<StudioInstance>, String> {
+    match timeout(Duration::from_secs(5), list_roblox_studios_via_mcp()).await {
+        Ok(Ok(studios)) => Ok(studios),
+        Ok(Err(err)) => {
+            log::warn!("Unable to list Roblox Studio instances: {err}");
+            Ok(Vec::new())
+        }
+        Err(_) => {
+            log::warn!("Timed out while listing Roblox Studio instances");
+            Ok(Vec::new())
+        }
+    }
+}
+
 // ── Core lifecycle ──────────────────────────────────────────────────────
 
 /// Start the OpenCode server. Called automatically on app launch.
@@ -224,6 +273,19 @@ async fn do_start(
 
     let studio_mcp_cmd = studio_mcp_command();
     log::info!("Studio MCP command: {:?}", studio_mcp_cmd);
+    let vscode_mcp_cmd = vscode_mcp_command(nodejs_bin_dir)?;
+    log::info!("VS Code MCP command: {:?}", vscode_mcp_cmd);
+    let vscode_bridge = {
+        let bridge = app
+            .state::<crate::vscode_bridge::SharedVscodeBridgeState>()
+            .inner()
+            .lock()
+            .await;
+        serde_json::json!({
+            "BLOXBOT_VSCODE_BRIDGE_URL": format!("http://{}:{}", LOOPBACK, bridge.port),
+            "BLOXBOT_VSCODE_BRIDGE_TOKEN": bridge.token.clone(),
+        })
+    };
 
     let mcp_config = serde_json::json!({
         "plugin": [
@@ -235,6 +297,13 @@ async fn do_start(
                 "type": "local",
                 "command": studio_mcp_cmd,
                 "enabled": true
+            },
+            "bloxbot-vscode": {
+                "type": "local",
+                "command": vscode_mcp_cmd,
+                "environment": vscode_bridge.clone(),
+                "env": vscode_bridge,
+                "enabled": true
             }
         },
         "default_agent": "studio",
@@ -245,6 +314,16 @@ async fn do_start(
             "studio": {
                 "mode": "primary",
                 "description": "Roblox Studio development assistant",
+                "permission": {
+                    "read": "deny",
+                    "grep": "deny",
+                    "glob": "deny",
+                    "list": "deny",
+                    "bash": "deny",
+                    "edit": "deny",
+                    "task": "deny",
+                    "todowrite": "deny"
+                },
                 "prompt": concat!(
                     "You are BloxBot, an expert Roblox game developer working directly inside Roblox Studio via the official built-in MCP server. ",
                     "You build games by using MCP tools to read, write, and execute code in the live Studio session — never by showing code snippets for the user to paste.\n\n",
@@ -358,6 +437,32 @@ async fn do_start(
                     "If any MCP tool call fails or times out, tell the user:\n",
                     "\"Roblox Studio must be open and configured. See https://create.roblox.com/docs/studio/mcp\"\n",
                     "Do not retry repeatedly. Ask the user to verify Studio is running with MCP enabled."
+                )
+            },
+            "vscode-workspace": {
+                "mode": "primary",
+                "description": "Plan-first VS Code workspace assistant with Studio context.",
+                "permission": {
+                    "read": "deny",
+                    "grep": "deny",
+                    "glob": "deny",
+                    "list": "deny",
+                    "bash": "deny",
+                    "edit": "deny",
+                    "task": "deny",
+                    "todowrite": "allow"
+                },
+                "prompt": concat!(
+                    "You are BloxBot's VS Code Workspace assistant. You help move Roblox-related code and project files into the user's configured VS Code project folder while still using Roblox Studio MCP for context.\n\n",
+                    "## Default posture\n",
+                    "Start in a plan/review mindset. Explain the intended file changes before proposing edits. Use todos for multi-step work. ",
+                    "When Roblox Studio context matters, inspect the DataModel and scripts through the Roblox Studio MCP tools. Studio MCP is available for context, but avoid Studio mutations unless the user explicitly asks for them.\n\n",
+                    "## File workflow\n",
+                    "For VS Code project files, use the `bloxbot-vscode` MCP tools. Do not use local shell, local filesystem read/list/grep, or generic edit tools for project files. ",
+                    "Read/search through the VS Code MCP tools, then call the proposal tool with complete target file contents. The VS Code extension will show the changes to the user and apply only approved edits.\n\n",
+                    "## Safety\n",
+                    "Treat the configured VS Code folder as the project boundary. Never propose writes outside it. If the VS Code companion is disconnected or a proposal is denied, report that clearly and continue with planning or explanation. ",
+                    "Do not claim files changed until the VS Code bridge reports approval."
                 )
             },
             "dictator": {
@@ -592,6 +697,236 @@ async fn do_start(
     }
 }
 
+async fn list_roblox_studios_via_mcp() -> Result<Vec<StudioInstance>, String> {
+    let command = studio_mcp_command();
+    let (program, args) = command
+        .split_first()
+        .ok_or_else(|| "Studio MCP command is empty".to_string())?;
+    let mut child = Command::new(program)
+        .args(args)
+        .kill_on_drop(true)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("Failed to start Studio MCP server: {e}"))?;
+
+    let result = async {
+        let stdin = child
+            .stdin
+            .as_mut()
+            .ok_or_else(|| "Studio MCP stdin unavailable".to_string())?;
+        write_mcp_message(
+            stdin,
+            &serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": { "name": "bloxbot", "version": env!("CARGO_PKG_VERSION") }
+                }
+            }),
+        )
+        .await?;
+
+        let stdout = child
+            .stdout
+            .as_mut()
+            .ok_or_else(|| "Studio MCP stdout unavailable".to_string())?;
+        read_mcp_response(stdout, 1).await?;
+
+        let stdin = child
+            .stdin
+            .as_mut()
+            .ok_or_else(|| "Studio MCP stdin unavailable".to_string())?;
+        write_mcp_message(
+            stdin,
+            &serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized",
+                "params": {}
+            }),
+        )
+        .await?;
+        write_mcp_message(
+            stdin,
+            &serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": { "name": "list_roblox_studios", "arguments": {} }
+            }),
+        )
+        .await?;
+
+        let stdout = child
+            .stdout
+            .as_mut()
+            .ok_or_else(|| "Studio MCP stdout unavailable".to_string())?;
+        let response = read_mcp_response(stdout, 2).await?;
+        if let Some(error) = response.get("error") {
+            return Err(format!("Studio MCP tool returned error: {error}"));
+        }
+        Ok(extract_studio_instances(&response))
+    }
+    .await;
+
+    let _ = child.kill().await;
+    result
+}
+
+async fn write_mcp_message(
+    stdin: &mut tokio::process::ChildStdin,
+    payload: &serde_json::Value,
+) -> Result<(), String> {
+    let body = serde_json::to_vec(payload).map_err(|e| format!("Failed to encode MCP message: {e}"))?;
+    let header = format!("Content-Length: {}\r\n\r\n", body.len());
+    stdin
+        .write_all(header.as_bytes())
+        .await
+        .map_err(|e| format!("Failed to write MCP header: {e}"))?;
+    stdin
+        .write_all(&body)
+        .await
+        .map_err(|e| format!("Failed to write MCP body: {e}"))?;
+    stdin
+        .flush()
+        .await
+        .map_err(|e| format!("Failed to flush MCP message: {e}"))
+}
+
+async fn read_mcp_response(
+    stdout: &mut ChildStdout,
+    expected_id: i64,
+) -> Result<serde_json::Value, String> {
+    loop {
+        let message = read_mcp_message(stdout).await?;
+        if message.get("id").and_then(serde_json::Value::as_i64) == Some(expected_id) {
+            return Ok(message);
+        }
+    }
+}
+
+async fn read_mcp_message(stdout: &mut ChildStdout) -> Result<serde_json::Value, String> {
+    let mut header = Vec::new();
+    let mut byte = [0_u8; 1];
+    loop {
+        stdout
+            .read_exact(&mut byte)
+            .await
+            .map_err(|e| format!("Failed to read MCP header: {e}"))?;
+        header.push(byte[0]);
+        if header.ends_with(b"\r\n\r\n") {
+            break;
+        }
+        if header.len() > 8192 {
+            return Err("MCP header is too large".to_string());
+        }
+    }
+
+    let header_text =
+        String::from_utf8(header).map_err(|e| format!("Invalid MCP header encoding: {e}"))?;
+    let length = header_text
+        .lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            if name.eq_ignore_ascii_case("content-length") {
+                value.trim().parse::<usize>().ok()
+            } else {
+                None
+            }
+        })
+        .ok_or_else(|| "MCP response missing Content-Length".to_string())?;
+
+    let mut body = vec![0_u8; length];
+    stdout
+        .read_exact(&mut body)
+        .await
+        .map_err(|e| format!("Failed to read MCP body: {e}"))?;
+    serde_json::from_slice(&body).map_err(|e| format!("Invalid MCP JSON response: {e}"))
+}
+
+fn extract_studio_instances(value: &serde_json::Value) -> Vec<StudioInstance> {
+    let mut studios = Vec::new();
+    collect_studio_instances(value, &mut studios);
+    studios
+}
+
+fn collect_studio_instances(value: &serde_json::Value, studios: &mut Vec<StudioInstance>) {
+    match value {
+        serde_json::Value::Array(items) => {
+            for item in items {
+                collect_studio_instances(item, studios);
+            }
+        }
+        serde_json::Value::Object(obj) => {
+            if let Some(id) = studio_id_from_object(obj) {
+                if !studios.iter().any(|studio| studio.id == id) {
+                    studios.push(StudioInstance {
+                        id,
+                        label: studio_label_from_object(obj),
+                    });
+                }
+            }
+            for item in obj.values() {
+                collect_studio_instances(item, studios);
+            }
+        }
+        serde_json::Value::String(text) => {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(text) {
+                collect_studio_instances(&parsed, studios);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn studio_id_from_object(map: &serde_json::Map<String, serde_json::Value>) -> Option<String> {
+    for key in [
+        "studio_id",
+        "studioId",
+        "studioid",
+        "instance_id",
+        "instanceId",
+        "instanceid",
+        "id",
+    ] {
+        if let Some(id) = normalize_studio_id(map.get(key)) {
+            return Some(id);
+        }
+    }
+    None
+}
+
+fn studio_label_from_object(map: &serde_json::Map<String, serde_json::Value>) -> Option<String> {
+    for key in ["label", "name", "title", "place_name", "placeName", "project_name"] {
+        if let Some(label) = map.get(key).and_then(serde_json::Value::as_str) {
+            let trimmed = label.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn normalize_studio_id(value: Option<&serde_json::Value>) -> Option<String> {
+    match value {
+        Some(serde_json::Value::String(id)) => {
+            let trimmed = id.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+        Some(serde_json::Value::Number(id)) => Some(id.to_string()),
+        _ => None,
+    }
+}
+
 /// Spawn an event handler task for stdout/stderr/exit.
 fn spawn_event_handler(
     rx: tauri::async_runtime::Receiver<CommandEvent>,
@@ -823,6 +1158,72 @@ mod tests {
         assert!(cmd[0].contains("StudioMCP"));
         #[cfg(target_os = "windows")]
         assert_eq!(cmd[0], "cmd.exe");
+    }
+
+    #[test]
+    fn extracts_studio_instances_from_direct_tool_result() {
+        let value = serde_json::json!({
+            "result": {
+                "studios": [
+                    { "studio_id": 12345, "name": "Main Place" },
+                    { "studioId": "abc-123", "title": "Test Place" }
+                ]
+            }
+        });
+
+        assert_eq!(
+            extract_studio_instances(&value),
+            vec![
+                StudioInstance {
+                    id: "12345".to_string(),
+                    label: Some("Main Place".to_string()),
+                },
+                StudioInstance {
+                    id: "abc-123".to_string(),
+                    label: Some("Test Place".to_string()),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn extracts_studio_instances_from_mcp_text_json() {
+        let value = serde_json::json!({
+            "result": {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "{\"instances\":[{\"id\":67890,\"placeName\":\"Arena\"}]}"
+                    }
+                ]
+            }
+        });
+
+        assert_eq!(
+            extract_studio_instances(&value),
+            vec![StudioInstance {
+                id: "67890".to_string(),
+                label: Some("Arena".to_string()),
+            }]
+        );
+    }
+
+    #[test]
+    fn extracts_studio_instances_dedupes_ids() {
+        let value = serde_json::json!({
+            "studios": [
+                { "studio_id": "same-id", "name": "First" },
+                { "instance_id": "same-id", "name": "Second" }
+            ]
+        });
+
+        assert_eq!(
+            extract_studio_instances(&value),
+            vec![StudioInstance {
+                id: "same-id".to_string(),
+                label: Some("First".to_string()),
+            }]
+        );
     }
 
     #[tokio::test]

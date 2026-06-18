@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useAbort } from "@/hooks/mutations/useAbort";
@@ -7,7 +8,6 @@ import { useAllModels, useConnectedProviders } from "@/hooks/useProviders";
 import { useIsBusy } from "@/hooks/useSessionStatuses";
 import { splitModelKey } from "@/lib/splitModelKey";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
-import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import type { ModelInfo } from "@/types";
 
@@ -18,6 +18,11 @@ interface ImageAttachment {
   dataUrl: string;
   mime: string;
   filename: string;
+}
+
+interface StudioInstance {
+  id: string;
+  label?: string;
 }
 
 interface SpeechRecognitionConstructor {
@@ -67,120 +72,6 @@ const MAX_IMAGE_SIZE = 20 * 1024 * 1024;
 const MAX_ATTACHMENTS = 5;
 
 let attachmentCounter = 0;
-
-function normalizeStudioId(value: unknown): string | null {
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    return trimmed ? trimmed : null;
-  }
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return String(value);
-  }
-  return null;
-}
-
-function maybeParseJsonText(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
-}
-
-function extractStudioIdsFromValue(value: unknown): string[] {
-  const ids = new Set<string>();
-  const visited = new WeakSet<object>();
-  const keysThatLookLikeStudioId = ["studio_id", "studioid", "id", "instance_id", "instanceid"];
-  const collectionKeys = ["studios", "studio_sessions", "sessions", "instances"];
-  const uuidPattern =
-    /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
-  const numericIdPattern = /\b\d{4,}\b/g;
-
-  function addIdsFromText(text: string, contextKey?: string) {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-
-    const fromContext = contextKey?.toLowerCase() ?? "";
-    const hasStudioContext = fromContext.includes("studio") || fromContext.includes("instance");
-    const hasStudioHintInText = trimmed.toLowerCase().includes("studio");
-
-    if (!hasStudioContext && !hasStudioHintInText) {
-      const parsed = maybeParseJsonText(trimmed);
-      if (parsed !== null) {
-        walk(parsed, contextKey);
-      }
-      return;
-    }
-
-    for (const match of trimmed.matchAll(uuidPattern)) {
-      const studioId = normalizeStudioId(match[0]);
-      if (studioId) ids.add(studioId);
-    }
-    for (const match of trimmed.matchAll(numericIdPattern)) {
-      const studioId = normalizeStudioId(match[0]);
-      if (studioId) ids.add(studioId);
-    }
-  }
-
-  function walk(node: unknown, contextKey?: string) {
-    if (node === null || node === undefined) return;
-    if (Array.isArray(node)) {
-      for (const item of node) walk(item, contextKey);
-      return;
-    }
-    if (typeof node !== "object") {
-      if (typeof node === "string") {
-        if (contextKey) {
-          const normalizedKey = contextKey.toLowerCase();
-          if (keysThatLookLikeStudioId.includes(normalizedKey) && normalizedKey.includes("id")) {
-            const studioId = normalizeStudioId(node);
-            if (studioId) ids.add(studioId);
-          }
-        }
-        addIdsFromText(node, contextKey);
-      }
-      return;
-    }
-    if (visited.has(node)) return;
-    visited.add(node);
-
-    const obj = node as Record<string, unknown>;
-    const hasStudioHint = Object.keys(obj).some((key) => key.toLowerCase().includes("studio"));
-
-    for (const [key, val] of Object.entries(obj)) {
-      const normalizedKey = key.toLowerCase();
-      if (collectionKeys.includes(normalizedKey) && Array.isArray(val)) {
-        for (const entry of val) {
-          if (typeof entry === "object" && entry) {
-            const record = entry as Record<string, unknown>;
-            const directId =
-              normalizeStudioId(record.studio_id) ??
-              normalizeStudioId(record.studioId) ??
-              normalizeStudioId(record.instance_id) ??
-              normalizeStudioId(record.instanceId) ??
-              normalizeStudioId(record.id);
-            if (directId) ids.add(directId);
-          } else {
-            const directId = normalizeStudioId(entry);
-            if (directId) ids.add(directId);
-          }
-        }
-      }
-      const normalizedVal = normalizeStudioId(val);
-      if (
-        normalizedVal &&
-        keysThatLookLikeStudioId.includes(normalizedKey) &&
-        (hasStudioHint || normalizedKey.includes("studio") || normalizedKey.includes("instance"))
-      ) {
-        ids.add(normalizedVal);
-      }
-      walk(val, key);
-    }
-  }
-
-  walk(value);
-  return [...ids];
-}
 
 function fileToDataURL(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -378,7 +269,6 @@ function ChatInput() {
   const connectedProviders = useConnectedProviders();
   const agents = useAgents();
   const { activeSessionId } = useActiveSession();
-  const { client } = useOpenCodeClient();
   const isBusy = useIsBusy(activeSessionId);
   const {
     selectedModel,
@@ -413,7 +303,7 @@ function ChatInput() {
   const [showAgentPicker, setShowAgentPicker] = useState(false);
   const [showStudioPicker, setShowStudioPicker] = useState(false);
   const [loadingStudios, setLoadingStudios] = useState(false);
-  const [detectedStudioIds, setDetectedStudioIds] = useState<string[]>([]);
+  const [detectedStudios, setDetectedStudios] = useState<StudioInstance[]>([]);
   const [modelSearch, setModelSearch] = useState("");
   const [rejectShake, setRejectShake] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -692,51 +582,34 @@ function ChatInput() {
     () => agents.filter((a) => !a.hidden && (a.mode === "primary" || a.mode === "all")),
     [agents],
   );
-  const availableStudioIds = useMemo(() => {
-    const deduped = new Set<string>();
-    for (const id of detectedStudioIds) deduped.add(id);
-    for (const id of knownStudioIds) deduped.add(id);
-    return [...deduped];
-  }, [detectedStudioIds, knownStudioIds]);
+  const availableStudios = useMemo(() => {
+    const byId = new Map<string, StudioInstance>();
+    for (const studio of detectedStudios) {
+      const id = studio.id.trim();
+      if (id) byId.set(id, { id, label: studio.label?.trim() || undefined });
+    }
+    for (const id of knownStudioIds) {
+      const normalized = id.trim();
+      if (normalized && !byId.has(normalized)) byId.set(normalized, { id: normalized });
+    }
+    return [...byId.values()];
+  }, [detectedStudios, knownStudioIds]);
 
   const refreshStudios = useCallback(async () => {
-    if (!client) return;
     setLoadingStudios(true);
     try {
-      let res = await client.mcp.status({});
-      let mcpServers = res.data ?? {};
-      let studioServerStatus =
-        mcpServers["roblox-studio"] ?? mcpServers.roblox_studio ?? mcpServers.studio;
-      const studioStatusValue =
-        studioServerStatus &&
-        typeof studioServerStatus === "object" &&
-        "status" in studioServerStatus
-          ? String(studioServerStatus.status)
-          : undefined;
-
-      if (!studioServerStatus || studioStatusValue !== "connected") {
-        try {
-          await client.mcp.connect({ name: "roblox-studio" });
-          res = await client.mcp.status({});
-          mcpServers = res.data ?? {};
-          studioServerStatus =
-            mcpServers["roblox-studio"] ?? mcpServers.roblox_studio ?? mcpServers.studio;
-        } catch (connectErr) {
-          console.warn("Unable to connect roblox-studio MCP server:", connectErr);
-        }
-      }
-
-      const ids = extractStudioIdsFromValue(studioServerStatus);
-      setDetectedStudioIds(ids);
-      if (ids.length > 0) {
-        for (const id of ids) addKnownStudioId(id);
+      const studios = await invoke<StudioInstance[]>("list_roblox_studios");
+      setDetectedStudios(studios);
+      if (studios.length > 0) {
+        for (const studio of studios) addKnownStudioId(studio.id);
       }
     } catch (err) {
       console.error("Failed to detect Roblox Studio sessions:", err);
+      setDetectedStudios([]);
     } finally {
       setLoadingStudios(false);
     }
-  }, [addKnownStudioId, client]);
+  }, [addKnownStudioId]);
 
   useEffect(() => {
     if (!showStudioPicker) return;
@@ -1020,19 +893,24 @@ function ChatInput() {
               >
                 Auto-select studio
               </button>
-              {availableStudioIds.map((studioId) => (
+              {availableStudios.map((studio) => (
                 <button
-                  key={studioId}
+                  key={studio.id}
                   onClick={() => {
-                    setPreferredStudioId(studioId);
+                    setPreferredStudioId(studio.id);
                     setShowStudioPicker(false);
                   }}
-                  className={`flex w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors ${preferredStudioId === studioId ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
+                  className={`flex w-full flex-col rounded-md px-2 py-1.5 text-left text-xs transition-colors ${preferredStudioId === studio.id ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
                 >
-                  {studioId}
+                  <span className="truncate">{studio.label ?? `Studio ${studio.id}`}</span>
+                  {studio.label && (
+                    <span className="mt-0.5 truncate text-[10px] text-muted-foreground">
+                      {studio.id}
+                    </span>
+                  )}
                 </button>
               ))}
-              {availableStudioIds.length === 0 && (
+              {availableStudios.length === 0 && (
                 <div className="px-2 py-2 text-xs text-muted-foreground">
                   {loadingStudios
                     ? "Looking for active Studio sessions…"

@@ -30,6 +30,7 @@ const POPULAR_PROVIDERS = [
   "anthropic",
   "github-copilot",
   "openai",
+  "xai",
   "google",
   "openrouter",
   "vercel",
@@ -48,6 +49,10 @@ const PROVIDER_META: Record<string, { placeholder?: string; helpUrl?: string }> 
   openai: {
     placeholder: "sk-...",
     helpUrl: "https://platform.openai.com/api-keys",
+  },
+  xai: {
+    placeholder: "xai-...",
+    helpUrl: "https://console.x.ai/",
   },
   google: {
     placeholder: "AIza...",
@@ -344,11 +349,21 @@ function ProvidersTab({ appVersion }: { appVersion: string | null }) {
     }
   }, [closeDialog, connectedProviders, dialog]);
 
-  function getOAuthMethodIndex(providerId: string): number | null {
+  function getOAuthMethods(providerId: string) {
     const methods = authMethods[providerId];
-    if (!methods) return null;
-    const idx = methods.findIndex((m) => m.type === "oauth");
-    return idx >= 0 ? idx : null;
+    if (!methods) return [];
+    return methods
+      .map((method, index) => ({ method, index }))
+      .filter(({ method }) => method.type === "oauth");
+  }
+
+  function getOAuthMethodIndex(providerId: string): number | null {
+    return getOAuthMethods(providerId)[0]?.index ?? null;
+  }
+
+  function getApiKeyMethod(providerId: string) {
+    const methods = authMethods[providerId];
+    return methods?.find((m) => m.type === "api") ?? null;
   }
 
   function hasApiKeyAuth(providerId: string): boolean {
@@ -357,16 +372,23 @@ function ProvidersTab({ appVersion }: { appVersion: string | null }) {
     return methods.some((m) => m.type === "api");
   }
 
+  function getMethodLabel(method: { label?: unknown }, fallback: string): string {
+    return typeof method.label === "string" && method.label.trim() ? method.label : fallback;
+  }
+
   function openConnect(provider: ProviderInfo) {
-    const oauthIdx = getOAuthMethodIndex(provider.id);
+    const oauthMethods = getOAuthMethods(provider.id);
+    const oauthIdx = oauthMethods[0]?.index ?? null;
     const apiKey = hasApiKeyAuth(provider.id);
 
     // If only one method, skip method selection
-    if (oauthIdx !== null && !apiKey) {
+    if (oauthMethods.length === 1 && oauthIdx !== null && !apiKey) {
       startOAuthFlow(provider, oauthIdx);
     } else if (oauthIdx === null && apiKey) {
       setDialog({ step: "apikey", provider });
     } else if (oauthIdx !== null && apiKey) {
+      setDialog({ step: "methods", provider });
+    } else if (oauthMethods.length > 1) {
       setDialog({ step: "methods", provider });
     } else {
       // No auth methods available
@@ -697,14 +719,12 @@ function ProvidersTab({ appVersion }: { appVersion: string | null }) {
             {/* Method selection */}
             {dialog.step === "methods" && (
               <div className="mt-4 space-y-2">
-                {getOAuthMethodIndex(dialog.provider.id) !== null && (
+                {getOAuthMethods(dialog.provider.id).map(({ method, index }) => (
                   <button
+                    key={`oauth-${index}`}
                     onClick={() => {
-                      const idx = getOAuthMethodIndex(dialog.provider.id);
-                      if (idx !== null) {
-                        setError(null);
-                        startOAuthFlow(dialog.provider, idx);
-                      }
+                      setError(null);
+                      startOAuthFlow(dialog.provider, index);
                     }}
                     className="flex h-9 w-full items-center justify-center gap-2 rounded-md border bg-background text-xs font-medium transition-colors hover:bg-accent"
                   >
@@ -722,9 +742,9 @@ function ProvidersTab({ appVersion }: { appVersion: string | null }) {
                       <polyline points="10 17 15 12 10 7" />
                       <line x1="15" y1="12" x2="3" y2="12" />
                     </svg>
-                    Sign in with {dialog.provider.name}
+                    {getMethodLabel(method, `Sign in with ${dialog.provider.name}`)}
                   </button>
-                )}
+                ))}
                 {getOAuthMethodIndex(dialog.provider.id) !== null &&
                   hasApiKeyAuth(dialog.provider.id) && (
                     <div className="flex items-center gap-2">
@@ -741,7 +761,7 @@ function ProvidersTab({ appVersion }: { appVersion: string | null }) {
                     }}
                     className="flex h-9 w-full items-center justify-center gap-2 rounded-md border bg-background text-xs font-medium transition-colors hover:bg-accent"
                   >
-                    Use an API key
+                    {getMethodLabel(getApiKeyMethod(dialog.provider.id) ?? {}, "Use an API key")}
                   </button>
                 )}
               </div>

@@ -1,0 +1,52 @@
+{
+  "name": "bloxbot-vscode-companion",
+  "displayName": "BloxBot VS Code Companion",
+  "description": "Review and approve BloxBot workspace file changes inside VS Code.",
+  "version": "0.1.0",
+  "publisher": "bloxbot",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:bloxbotCompanion.connect",
+    "onView:bloxbotCompanion"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "bloxbotCompanion.connect",
+        "title": "BloxBot: Connect Companion"
+      },
+      {
+        "command": "bloxbotCompanion.refresh",
+        "title": "BloxBot: Refresh Pending Changes"
+      }
+    ],
+    "configuration": {
+      "title": "BloxBot Companion",
+      "properties": {
+        "bloxbotCompanion.bridgeUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:59300",
+          "description": "BloxBot VS Code bridge URL."
+        },
+        "bloxbotCompanion.bridgeToken": {
+          "type": "string",
+          "default": "",
+          "description": "BloxBot VS Code bridge pairing token."
+        }
+      }
+    },
+    "views": {
+      "explorer": [
+        {
+          "id": "bloxbotCompanion",
+          "name": "BloxBot"
+        }
+      ]
+    }
+  }
+}

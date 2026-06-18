@@ -10,6 +10,8 @@ import { sseDispatch } from "@/lib/sseDispatch";
 
 const SSE_RECONNECT_DELAY = 3000;
 const SSE_FAILURE_THRESHOLD = 3;
+const STARTUP_REQUEST_TIMEOUT = 3000;
+const PREFETCH_TIMEOUT = 4000;
 
 type AppStatus = "waiting" | "ready" | "error";
 
@@ -71,13 +73,13 @@ export function OpenCodeClientProvider({
       throw new Error("cancelled");
     }
 
-    // Step 2: Poll the HTTP server until it responds.
+    // Step 2: Poll the lightweight health endpoint until the HTTP server responds.
     async function waitForServer(baseUrl: string): Promise<void> {
       while (!cancelled) {
         try {
-          const res = await fetch(`${baseUrl}/session`, {
+          const res = await fetch(`${baseUrl}/global/health`, {
             method: "GET",
-            signal: AbortSignal.timeout(3000),
+            signal: AbortSignal.timeout(STARTUP_REQUEST_TIMEOUT),
           });
           if (res.ok || res.status >= 400) return;
         } catch {
@@ -237,11 +239,11 @@ export function OpenCodeClientProvider({
 
 async function prefetchServerState(client: OpencodeClient, queryClient: QueryClient) {
   const [sessionRes, providerRes, statusRes, agentsRes, authRes] = await Promise.all([
-    client.session.list({}),
-    client.provider.list({}),
-    client.session.status({}),
-    client.app.agents({}).catch(() => ({ data: undefined })),
-    client.provider.auth({}).catch(() => ({ data: undefined })),
+    withStartupTimeout("sessions", client.session.list({})),
+    withStartupTimeout("providers", client.provider.list({})),
+    withStartupTimeout("statuses", client.session.status({})),
+    withStartupTimeout("agents", client.app.agents({})),
+    withStartupTimeout("provider auth", client.provider.auth({})),
   ]);
 
   if (sessionRes.data) {
@@ -262,5 +264,29 @@ async function prefetchServerState(client: OpencodeClient, queryClient: QueryCli
       ? { ...providerRes.data, authMethods: authRes.data }
       : providerRes.data;
     queryClient.setQueryData(qk.providers, providerData);
+  }
+}
+
+async function withStartupTimeout<T>(
+  label: string,
+  promise: Promise<T>,
+): Promise<T | { data: undefined }> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<{ data: undefined }>((resolve) => {
+        timeoutId = setTimeout(() => {
+          console.warn(`OpenCode startup prefetch timed out: ${label}`);
+          resolve({ data: undefined });
+        }, PREFETCH_TIMEOUT);
+      }),
+    ]);
+  } catch (err) {
+    console.warn(`OpenCode startup prefetch failed: ${label}`, err);
+    return { data: undefined };
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
   }
 }
