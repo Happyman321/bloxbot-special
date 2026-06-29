@@ -14,7 +14,7 @@ concurrency:
 
 env:
   NODE_VERSION: "22.13.1"
-  OPENCODE_VERSION: "1.14.28"
+  OPENCODE_VERSION: "1.17.11"
 
 jobs:
   build:
@@ -28,7 +28,7 @@ jobs:
             target: x86_64-pc-windows-msvc
             node_asset: node-v22.13.1-win-x64.zip
             node_inner_dir: node-v22.13.1-win-x64
-            opencode_asset: opencode-windows-x64.zip
+            opencode_asset: opencode-windows-x64-baseline.zip
             opencode_bin: opencode.exe
             ext: ".exe"
             args: "--bundles nsis"

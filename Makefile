@@ -13,7 +13,7 @@ SHELL := /bin/bash
 
 # ── Versions ─────────────────────────────────────────────────────────────
 NODE_VERSION   := 22.13.1
-OPENCODE_VERSION := 1.14.28
+OPENCODE_VERSION := 1.17.11
 
 # ── Platform detection ───────────────────────────────────────────────────
 UNAME_S := $(shell uname -s)
@@ -37,7 +37,7 @@ else ifeq ($(UNAME_S),Linux)
   TARGET       := x86_64-unknown-linux-gnu
   NODE_ASSET   := node-v$(NODE_VERSION)-linux-x64.tar.gz
   NODE_DIR     := node-v$(NODE_VERSION)-linux-x64
-  OC_ASSET     := opencode-linux-x64.zip
+  OC_ASSET     := opencode-linux-x64.tar.gz
   OC_BIN       := opencode
 endif
 
@@ -119,7 +119,7 @@ $(OPENCODE_BIN):
 		"https://github.com/anomalyco/opencode/releases/download/v$(OPENCODE_VERSION)/$(OC_ASSET)" \
 		-o "/tmp/bloxbot-deps/$(OC_ASSET)"
 	@echo "📦 Extracting OpenCode sidecar..."
-	cd /tmp/bloxbot-deps && unzip -o "$(OC_ASSET)"
+	cd /tmp/bloxbot-deps && case "$(OC_ASSET)" in *.zip) unzip -o "$(OC_ASSET)" ;; *.tar.gz) tar -xzf "$(OC_ASSET)" ;; esac
 	mv "/tmp/bloxbot-deps/$(OC_BIN)" "$(OPENCODE_BIN)"
 	chmod +x "$(OPENCODE_BIN)"
 	rm -rf /tmp/bloxbot-deps

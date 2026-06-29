@@ -13,7 +13,7 @@ export interface ModelInfo {
   name: string;
   providerId: string;
   providerName: string;
-  status?: "alpha" | "beta" | "deprecated";
+  status?: "alpha" | "beta" | "deprecated" | "active";
   modalities?: {
     input: Array<"text" | "audio" | "image" | "video" | "pdf">;
     output: Array<"text" | "audio" | "image" | "video" | "pdf">;

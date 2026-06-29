@@ -13,6 +13,19 @@ type ProvidersData = ProviderListResponse & {
   authMethods?: Record<string, ProviderAuthMethod[]>;
 };
 
+const MODALITIES = ["text", "audio", "image", "video", "pdf"] as const;
+
+function getModelModalities(model: { capabilities?: ModelCapabilities }): ModelInfo["modalities"] {
+  const input = MODALITIES.filter((modality) => model.capabilities?.input?.[modality]);
+  const output = MODALITIES.filter((modality) => model.capabilities?.output?.[modality]);
+  return { input, output };
+}
+
+type ModelCapabilities = {
+  input?: Partial<Record<(typeof MODALITIES)[number], boolean>>;
+  output?: Partial<Record<(typeof MODALITIES)[number], boolean>>;
+};
+
 function useProvidersQuery() {
   const { client } = useOpenCodeClient();
 
@@ -60,7 +73,7 @@ export function useAllModels(): ModelInfo[] {
         providerId: provider.id,
         providerName: provider.name,
         status: model.status,
-        modalities: model.modalities,
+        modalities: getModelModalities(model),
         variants: model.variants,
       });
     }

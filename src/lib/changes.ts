@@ -1,4 +1,4 @@
-import type { FileDiff, Part } from "@opencode-ai/sdk/v2/client";
+import type { FileDiff, Part, SnapshotFileDiff } from "@opencode-ai/sdk/v2/client";
 
 import type { MessageWithParts } from "@/types";
 
@@ -317,21 +317,40 @@ export function buildSessionChanges(
   return [];
 }
 
+type ApiDiff = FileDiff | SnapshotFileDiff;
+
+function getApiDiffPath(diff: ApiDiff): string {
+  return "path" in diff ? diff.path : (diff.file ?? "");
+}
+
+function getApiDiffPatch(diff: ApiDiff): string {
+  return "patch" in diff ? (diff.patch ?? "") : "";
+}
+
+function getApiDiffKind(diff: ApiDiff): ChangeKind | undefined {
+  if (!("status" in diff)) return undefined;
+  if (diff.status === "added") return "add";
+  if (diff.status === "deleted") return "delete";
+  if (diff.status === "modified") return "modify";
+  return undefined;
+}
+
 export function buildSessionChangesFromDiffs(
-  diffsByMessage: Array<{ messageId: string; createdAt?: number; diffs: FileDiff[] }>,
+  diffsByMessage: Array<{ messageId: string; createdAt?: number; diffs: ApiDiff[] }>,
 ): SessionChange[] {
   const all: SessionChange[] = [];
 
   for (const item of diffsByMessage) {
     for (const diff of item.diffs) {
-      const path = normalizePath(diff.file);
+      const path = normalizePath(getApiDiffPath(diff));
       if (!path) continue;
+      const patch = getApiDiffPatch(diff);
       all.push(
         toSessionChange(
           {
             path,
-            before: diff.before,
-            after: diff.after,
+            after: patch,
+            kind: getApiDiffKind(diff),
             sourceMessageId: item.messageId,
             sourceMessageCreatedAt: item.createdAt,
           },
