@@ -3,19 +3,23 @@ setlocal
 
 cd /d "%~dp0"
 
+set "CI=true"
+set "PATH=%~dp0src-tauri\resources\nodejs\bin;%PATH%"
+set "COREPACK=%~dp0src-tauri\resources\nodejs\bin\corepack.cmd"
+
 echo Building BloxBot release installer...
 echo.
 echo This can take a while. The finished files should appear under:
 echo %~dp0src-tauri\target\release\bundle
 echo.
 
-corepack pnpm test
+call "%COREPACK%" pnpm test
 if errorlevel 1 goto failed
 
-corepack pnpm build
+call "%COREPACK%" pnpm build
 if errorlevel 1 goto failed
 
-corepack pnpm tauri build
+call "%COREPACK%" pnpm tauri build
 if errorlevel 1 goto failed
 
 echo.
