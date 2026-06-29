@@ -362,6 +362,7 @@ async fn do_start(
                     "- `script_grep(pattern)` — Search all script contents for a string pattern (max 50 matches). Use to find references, remote names, API usage.\n\n",
 
                     "### Data Model\n",
+                    "- `explore_subagent(objective)` - Read-only investigation of larger places. Use when the project is broad enough that parallel exploration will save time, not for tiny targeted changes.\n",
                     "- `search_game_tree(path?, instance_type?, keyword?, depth?)` — Explore the instance hierarchy as flat JSON. Default depth 3, max 10.\n",
                     "- `inspect_instance(path)` — All readable properties, custom attributes, children count, descendants. Always inspect before modifying properties via Luau.\n\n",
 
@@ -375,6 +376,8 @@ async fn do_start(
                     "Keep `execute_luau` code minimal and explicit. Print or return confirmation data. Prefer idempotent operations.\n\n",
 
                     "### Playtesting & Debugging\n",
+                    "- `screen_capture()` - Capture the current Studio viewport during playtests when visual state matters.\n",
+                    "- `playtest_subagent(objective)` - Run heavier gameplay scenario testing. Use for risky, multi-system, visual, physics, networking, economy, combat, save-data, or regression-prone changes.\n",
                     "- `start_stop_play(\"start\")` / `start_stop_play(\"stop\")` — Start/stop playtesting.\n",
                     "- `console_output()` — Retrieve console logs. Check immediately after starting a playtest or triggering a feature.\n",
                     "- **Always stop playtesting before making structural edits** to ensure changes persist in the Edit session.\n\n",
@@ -393,9 +396,29 @@ async fn do_start(
                     "- `keyboard_input(action, key)` — Key presses, holds, text input\n",
                     "- `mouse_input(action, position?)` — Clicks, movement, scrolling\n\n",
 
+                    "### Restricted Asset Generation\n",
+                    "- `generate_mesh(prompt)` - Generate a textured 3D mesh only when the user directly asks for generated mesh/model assets.\n",
+                    "- `generate_material(prompt)` - Generate a custom material or texture only when the user directly asks for generated materials/textures.\n",
+                    "- `generate_procedural_model(prompt)` - Generate a procedural model only when the user directly asks for generated procedural content.\n",
+                    "- `insert_from_creator_store(query_or_asset)` - Insert Creator Store assets only when the user directly asks to insert something from Creator Store.\n",
+                    "Do not use generation or Creator Store insertion tools as part of normal exploration, building, debugging, or verification. For ordinary work, use DataModel/script tools and `execute_luau`.\n\n",
                     "### Session Management\n",
+
                     "- `list_roblox_studios()` — List connected Studio instances\n",
                     "- `set_active_studio(studio_id)` — Target a specific instance before making changes\n\n",
+
+                    "## MicroProfiler / LibMP\n",
+                    "Use `execute_luau` to inspect MicroProfiler data through LibMP when the user asks about frame spikes, FPS drops, CPU/GPU bottlenecks, memory allocation, or profiling. ",
+                    "For Studio MCP and Assistant-style workflows, use `require(\"@rbx/LibMP\")`. ",
+                    "Prefer paused or snapshotted MicroProfiler captures for deeper analysis so the dataset stays stable while you inspect frames, threads, timers, groups, and counters. ",
+                    "Do not force a switch to Play mode if the user already has static MicroProfiler data captured. ",
+                    "When mentioning profiler frames, report both the regular frame ID and absolute frame ID so the user can find the frame programmatically and in the UI.\n\n",
+
+                    "## Proportional Verification\n",
+                    "Always verify changes, but scale verification to the risk and blast radius. ",
+                    "For small low-risk changes, such as numeric tuning, copy text, simple property edits, or narrowly scoped script changes, use focused `script_read`, `inspect_instance`, `search_game_tree`, or a light playtest only when useful. ",
+                    "Do not turn every tiny edit into a long playtest loop or subagent run unless the user explicitly asks for exhaustive validation. ",
+                    "Use `screen_capture`, `playtest_subagent`, broader playtesting, and extra regression checks for risky, visual, multi-system, physics, networking, economy, combat, save-data, or regression-prone changes.\n\n",
 
                     "## Roblox Architecture\n\n",
 
