@@ -8,6 +8,7 @@ import { useAllModels, useConnectedProviders } from "@/hooks/useProviders";
 import { useIsBusy } from "@/hooks/useSessionStatuses";
 import { splitModelKey } from "@/lib/splitModelKey";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
+import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import { usePreferences } from "@/providers/PreferencesProvider";
 import type { ModelInfo } from "@/types";
 
@@ -265,6 +266,7 @@ const StatusHint = memo(function StatusHint() {
 });
 
 function ChatInput() {
+  const { client } = useOpenCodeClient();
   const allModels = useAllModels();
   const connectedProviders = useConnectedProviders();
   const agents = useAgents();
@@ -303,6 +305,7 @@ function ChatInput() {
   const [showAgentPicker, setShowAgentPicker] = useState(false);
   const [showStudioPicker, setShowStudioPicker] = useState(false);
   const [loadingStudios, setLoadingStudios] = useState(false);
+  const [reconnectingStudio, setReconnectingStudio] = useState(false);
   const [detectedStudios, setDetectedStudios] = useState<StudioInstance[]>([]);
   const [modelSearch, setModelSearch] = useState("");
   const [rejectShake, setRejectShake] = useState(false);
@@ -610,6 +613,42 @@ function ChatInput() {
       setLoadingStudios(false);
     }
   }, [addKnownStudioId]);
+
+  const reconnectStudio = useCallback(async () => {
+    setReconnectingStudio(true);
+    setLoadingStudios(true);
+    try {
+      if (!client) {
+        throw new Error("OpenCode is not ready yet");
+      }
+
+      try {
+        await client.mcp.disconnect({ name: "roblox-studio" });
+      } catch (err) {
+        console.warn("Unable to disconnect roblox-studio MCP server before reconnect:", err);
+      }
+
+      await client.mcp.connect({ name: "roblox-studio" });
+      const studios = await invoke<StudioInstance[]>("list_roblox_studios");
+      setDetectedStudios(studios);
+      for (const studio of studios) addKnownStudioId(studio.id);
+
+      if (studios.length > 0) {
+        toast.success("Reconnected to Roblox Studio");
+      } else {
+        toast.warning("Studio MCP reconnected, but no active Studio sessions were found.");
+      }
+    } catch (err) {
+      console.error("Failed to reconnect Roblox Studio MCP:", err);
+      setDetectedStudios([]);
+      toast.error("Could not reconnect to Roblox Studio", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setLoadingStudios(false);
+      setReconnectingStudio(false);
+    }
+  }, [addKnownStudioId, client]);
 
   useEffect(() => {
     if (!showStudioPicker) return;
@@ -919,10 +958,17 @@ function ChatInput() {
               )}
               <button
                 onClick={refreshStudios}
-                disabled={loadingStudios}
+                disabled={loadingStudios || reconnectingStudio}
                 className="mt-1 flex w-full rounded-md border px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {loadingStudios ? "Refreshing…" : "Refresh Studio list"}
+              </button>
+              <button
+                onClick={reconnectStudio}
+                disabled={loadingStudios || reconnectingStudio || !client}
+                className="mt-1 flex w-full rounded-md border px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {reconnectingStudio ? "Reconnecting..." : "Reconnect to Studio"}
               </button>
               <button
                 onClick={handleAddStudioId}

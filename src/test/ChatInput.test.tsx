@@ -457,6 +457,26 @@ describe("ChatInput", () => {
     });
   });
 
+  it("reconnects the Studio MCP server and refreshes detected studios", async () => {
+    const client = createClient();
+    vi.mocked(invoke)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: "67890", label: "Recovered Place" }]);
+    const qc = createQueryClient();
+
+    render(<TestChatInput client={client} queryClient={qc} />);
+
+    fireEvent.click(await screen.findByTitle("Pick a Roblox Studio instance"));
+    fireEvent.click(await screen.findByText("Reconnect to Studio"));
+
+    await waitFor(() => {
+      expect(client.mcp.disconnect).toHaveBeenCalledWith({ name: "roblox-studio" });
+      expect(client.mcp.connect).toHaveBeenCalledWith({ name: "roblox-studio" });
+      expect(screen.getByText("Recovered Place")).toBeInTheDocument();
+      expect(screen.getByText("67890")).toBeInTheDocument();
+    });
+  });
+
   it("shows the empty state when the backend command returns no active studios", async () => {
     const client = createClient();
     vi.mocked(invoke).mockResolvedValueOnce([]);
