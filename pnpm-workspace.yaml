@@ -3,3 +3,5 @@ allowBuilds:
   esbuild: true
   msw: true
   protobufjs: true
+minimumReleaseAgeExclude:
+  - '@opencode-ai/sdk@1.17.18'

@@ -14,7 +14,7 @@ concurrency:
 
 env:
   NODE_VERSION: "22.13.1"
-  OPENCODE_VERSION: "1.17.11"
+  OPENCODE_VERSION: "1.17.18"
 
 jobs:
   build:
