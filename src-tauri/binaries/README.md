@@ -21,7 +21,7 @@ Download from https://github.com/anomalyco/opencode/releases
 BloxBot carries a small patch for its pinned OpenCode version so auto-generated
 chat titles use lightweight models without changing the visible chat request:
 
-- OpenAI titles use `gpt-5.6-luna-fast`.
+- OpenAI titles use `gpt-5.6-terra-fast`.
 - xAI titles use `grok-4.5`.
 
 Run `powershell -ExecutionPolicy Bypass -File scripts/build-opencode-sidecar.ps1`

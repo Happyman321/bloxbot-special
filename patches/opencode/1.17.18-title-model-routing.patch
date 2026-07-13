@@ -7,7 +7,7 @@ index eb116f6..8f017b2 100644
  export class Service extends Context.Service<Service, Interface>()("@opencode/SessionPrompt") {}
  
 +function titleModelOverride(providerID: ProviderV2.ID) {
-+  if (providerID === "openai") return { providerID, modelID: "gpt-5.6-luna-fast" }
++  if (providerID === "openai") return { providerID, modelID: "gpt-5.6-terra-fast" }
 +  if (providerID === "xai") return { providerID, modelID: "grok-4.5" }
 +}
 +
