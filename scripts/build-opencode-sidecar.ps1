@@ -30,11 +30,11 @@ try {
   $env:PATH = "$bunDirectory;$env:PATH"
   $env:OPENCODE_VERSION = $Version
   & $bunCommand install --frozen-lockfile
-  & $bunCommand run --cwd packages/opencode build -- --single --baseline --skip-install
+  & $bunCommand run --cwd packages/opencode build -- --single --skip-install
 
-  $built = Join-Path $source "packages\\opencode\\dist\\opencode-windows-x64-baseline\\bin\\opencode.exe"
+  $built = Join-Path $source "packages\\opencode\\dist\\opencode-windows-x64\\bin\\opencode.exe"
   if (!(Test-Path $built)) {
-    throw "OpenCode did not produce the expected Windows baseline sidecar: $built"
+    throw "OpenCode did not produce the expected Windows x64 sidecar: $built"
   }
 
   Copy-Item -Force $built $binary

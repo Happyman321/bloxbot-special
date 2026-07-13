@@ -27,8 +27,10 @@ chat titles use lightweight models without changing the visible chat request:
 Run `powershell -ExecutionPolicy Bypass -File scripts/build-opencode-sidecar.ps1`
 from the repository root to rebuild the Windows sidecar (requires Bun 1.3.14 on
 `PATH`). The script checks that the matching versioned patch applies before
-replacing the local binary. When upgrading OpenCode, add and review a patch for
-the new version first.
+replacing the local binary. It builds OpenCode's regular Windows x64 binary;
+the upstream baseline variant needs a second Bun runtime download and is not
+needed for BloxBot's title routing. When upgrading OpenCode, add and review a
+patch for the new version first.
 
 ## Node.js Runtime
 

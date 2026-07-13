@@ -130,10 +130,10 @@ jobs:
 
           cd "$source_dir"
           bun install --frozen-lockfile
-          OPENCODE_VERSION="${{ env.OPENCODE_VERSION }}" bun run --cwd packages/opencode build -- --single --baseline --skip-install
+          OPENCODE_VERSION="${{ env.OPENCODE_VERSION }}" bun run --cwd packages/opencode build -- --single --skip-install
 
           mkdir -p "$(dirname "$output_file")"
-          cp "packages/opencode/dist/opencode-windows-x64-baseline/bin/opencode.exe" "$output_file"
+          cp "packages/opencode/dist/opencode-windows-x64/bin/opencode.exe" "$output_file"
           "$output_file" --version
 
       # ── Build (CI) / Build & Release (tags) ─────────────────────────
