@@ -3,9 +3,9 @@ index eb116f6..8f017b2 100644
 --- a/packages/opencode/src/session/prompt.ts
 +++ b/packages/opencode/src/session/prompt.ts
 @@ -110,6 +110,11 @@ export interface Interface {
-
-export class Service extends Context.Service<Service, Interface>()("@opencode/SessionPrompt") {}
-
+ 
+ export class Service extends Context.Service<Service, Interface>()("@opencode/SessionPrompt") {}
+ 
 +export function titleModelOverride(providerID: ProviderV2.ID) {
 +  if (providerID === "openai") return { providerID, modelID: "gpt-5.6-terra-fast" }
 +  if (providerID === "xai") return { providerID, modelID: "grok-4.5" }
@@ -15,8 +15,8 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Se
    Service,
    Effect.gen(function* () {
 @@ -215,13 +220,28 @@ const layer = Layer.effect(
-
-      const ag = yield* agents.get("title")
+ 
+       const ag = yield* agents.get("title")
        if (!ag) return
 -      const mdl = ag.model
 -        ? yield* provider.getModel(ag.model.providerID, ag.model.modelID)

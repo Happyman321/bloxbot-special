@@ -33,8 +33,8 @@ index a6fb064..039a4dc 100644
 +  studios: "/mcp/:name/studios",
 +  activeStudio: "/mcp/:name/studios/active",
  } as const
-
-export const McpApi = HttpApi.make("mcp")
+ 
+ export const McpApi = HttpApi.make("mcp")
 @@ -136,6 +146,31 @@ export const McpApi = HttpApi.make("mcp")
              description: "Disconnect an MCP server.",
            }),
@@ -88,13 +88,13 @@ index cdf0cc1..b036a89 100644
 +  StatusMap,
 +  UnsupportedOAuthError,
 +} from "../groups/mcp"
-
-export const mcpHandlers = HttpApiBuilder.group(InstanceHttpApi, "mcp", (handlers) =>
+ 
+ export const mcpHandlers = HttpApiBuilder.group(InstanceHttpApi, "mcp", (handlers) =>
    Effect.gen(function* () {
 @@ -98,6 +106,70 @@ export const mcpHandlers = HttpApiBuilder.group(InstanceHttpApi, "mcp", (handler
        return true
      })
-
+ 
 +    const callStudioTool = Effect.fn("McpHttpApi.callStudioTool")(function* (
 +      serverName: string,
 +      toolName: "list_roblox_studios" | "set_active_studio",
@@ -197,7 +197,7 @@ index d3ca4ae..ef529f7 100644
 +      ),
    ),
  )
-
+ 
 @@ -70,4 +85,36 @@ describe("mcp HttpApi OAuth", () => {
        })
      }),
