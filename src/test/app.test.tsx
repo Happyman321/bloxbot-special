@@ -195,8 +195,6 @@ function seedReadyState(
     sessionFolderById: {},
     activeWorkspace: "all",
     folderOpenState: {},
-    preferredStudioId: null,
-    knownStudioIds: [],
     folderInstructionsByName: {},
     ...(opts.config ?? {}),
   });
@@ -372,6 +370,91 @@ describe("User journeys", () => {
     });
 
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining('print("hello")'));
+  });
+
+  it("shows a request error when sending fails before an assistant message exists", async () => {
+    const session = makeSession("s1", "Failed Session");
+    const client = createClient({
+      get: vi.fn().mockResolvedValue({ data: session }),
+      messages: vi.fn().mockResolvedValue({ data: [] }),
+      promptAsync: vi.fn().mockRejectedValue(new Error("ChatGPT connection expired")),
+    });
+    const queryClient = createQueryClient();
+    seedReadyState(queryClient, { sessions: [session] });
+    queryClient.setQueryData<MessagesCache>(qk.messages("s1"), {
+      messageIds: [],
+      messagesById: {},
+    });
+
+    render(<TestApp client={client} queryClient={queryClient} />);
+    await act(async () => fireEvent.click(await screen.findByText("Failed Session")));
+    const textarea = await screen.findByPlaceholderText("Describe what you want to build...");
+
+    await act(async () => {
+      fireEvent.change(textarea, { target: { value: "Hello" } });
+      fireEvent.click(screen.getByTitle("Send"));
+    });
+
+    expect(await screen.findByText("Message could not be sent")).toBeInTheDocument();
+    expect(screen.getByText("ChatGPT connection expired")).toBeInTheDocument();
+    expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
+  });
+
+  it("replaces thinking with the model failure reason from SSE", async () => {
+    const session = makeSession("s1", "Model Failure");
+    const client = createClient({
+      get: vi.fn().mockResolvedValue({ data: session }),
+      messages: vi.fn().mockResolvedValue({ data: [] }),
+    });
+    const queryClient = createQueryClient();
+    seedReadyState(queryClient, { sessions: [session] });
+
+    render(<TestApp client={client} queryClient={queryClient} />);
+    await act(async () => fireEvent.click(await screen.findByText("Model Failure")));
+    await screen.findByPlaceholderText("Describe what you want to build...");
+
+    act(() => {
+      queryClient.setQueryData<MessagesCache>(qk.messages("s1"), {
+        messageIds: ["user_1"],
+        messagesById: {
+          user_1: {
+            info: {
+              id: "user_1",
+              sessionID: "s1",
+              role: "user",
+              time: { created: Date.now() },
+            } as never,
+            parts: [],
+          },
+        },
+      });
+      queryClient.setQueryData(qk.statuses, { s1: { type: "busy" } as never });
+    });
+    expect(await screen.findByText("Thinking...")).toBeInTheDocument();
+
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "message.updated",
+          properties: {
+            info: {
+              id: "assistant_1",
+              sessionID: "s1",
+              role: "assistant",
+              time: { created: Date.now(), completed: Date.now() },
+              error: { name: "UnknownError", data: { message: "Model not available" } },
+            },
+          },
+        } as never,
+        { current: "s1" },
+      );
+    });
+
+    expect(await screen.findByText("Model request failed")).toBeInTheDocument();
+    expect(screen.getByText("Model not available")).toBeInTheDocument();
+    expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
+    expect(screen.queryByText("Working")).not.toBeInTheDocument();
   });
 
   it("shows permission prompt and user can approve it", async () => {

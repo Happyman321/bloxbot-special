@@ -4,4 +4,4 @@ allowBuilds:
   msw: true
   protobufjs: true
 minimumReleaseAgeExclude:
-  - '@opencode-ai/sdk@1.17.18'
+  - '@opencode-ai/sdk@1.17.19'

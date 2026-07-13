@@ -7,22 +7,18 @@
 //! If the sidecar can't start, the app exits.
 
 use std::sync::Arc;
-use std::process::Stdio;
 use tauri::AppHandle;
 use tauri::Manager;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::process::{ChildStdout, Command};
 use tokio::sync::Mutex;
-use tokio::time::{timeout, Duration};
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StudioInstance {
     pub id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub label: Option<String>,
+    pub name: String,
+    pub active: bool,
 }
 
 /// BloxBot's reserved port range within the IANA dynamic/private range
@@ -30,6 +26,7 @@ pub struct StudioInstance {
 /// available port in the block.
 const OC_PORT_START: u16 = 59200;
 const PORT_RANGE: u16 = 10;
+const OPENCODE_PLUGINS: &[&str] = &["opencode-gemini-auth@latest"];
 
 /// All servers bind to IPv4 loopback.
 pub const LOOPBACK: &str = "127.0.0.1";
@@ -210,18 +207,24 @@ pub async fn get_opencode_info(
 }
 
 #[tauri::command]
-pub async fn list_roblox_studios() -> Result<Vec<StudioInstance>, String> {
-    match timeout(Duration::from_secs(5), list_roblox_studios_via_mcp()).await {
-        Ok(Ok(studios)) => Ok(studios),
-        Ok(Err(err)) => {
-            log::warn!("Unable to list Roblox Studio instances: {err}");
-            Ok(Vec::new())
-        }
-        Err(_) => {
-            log::warn!("Timed out while listing Roblox Studio instances");
-            Ok(Vec::new())
-        }
+pub async fn list_roblox_studios(
+    state: tauri::State<'_, SharedOpenCodeState>,
+) -> Result<Vec<StudioInstance>, String> {
+    let response = call_studio_bridge(&state, reqwest::Method::GET, None).await?;
+    parse_studio_instances(&response)
+}
+
+#[tauri::command]
+pub async fn set_active_roblox_studio(
+    state: tauri::State<'_, SharedOpenCodeState>,
+    studio_id: String,
+) -> Result<(), String> {
+    let studio_id = studio_id.trim();
+    if studio_id.is_empty() {
+        return Err("Studio ID cannot be empty".to_string());
     }
+    call_studio_bridge(&state, reqwest::Method::POST, Some(studio_id)).await?;
+    Ok(())
 }
 
 // ── Core lifecycle ──────────────────────────────────────────────────────
@@ -288,10 +291,7 @@ async fn do_start(
     };
 
     let mcp_config = serde_json::json!({
-        "plugin": [
-            "opencode-gemini-auth@latest",
-            "@guard22/opencode-multi-auth-codex@latest"
-        ],
+        "plugin": OPENCODE_PLUGINS,
         "mcp": {
             "roblox-studio": {
                 "type": "local",
@@ -405,7 +405,8 @@ async fn do_start(
                     "### Session Management\n",
 
                     "- `list_roblox_studios()` — List connected Studio instances\n",
-                    "- `set_active_studio(studio_id)` — Target a specific instance before making changes\n\n",
+                    "- `set_active_studio(studio_id)` — Target a specific instance before making changes\n",
+                    "- If BloxBot says a Studio target is already active, use it directly without listing Studios or selecting it again.\n\n",
 
                     "## MicroProfiler / LibMP\n",
                     "Use `execute_luau` to inspect MicroProfiler data through LibMP when the user asks about frame spikes, FPS drops, CPU/GPU bottlenecks, memory allocation, or profiling. ",
@@ -720,190 +721,123 @@ async fn do_start(
     }
 }
 
-async fn list_roblox_studios_via_mcp() -> Result<Vec<StudioInstance>, String> {
-    let command = studio_mcp_command();
-    let (program, args) = command
-        .split_first()
-        .ok_or_else(|| "Studio MCP command is empty".to_string())?;
-    let mut child = Command::new(program)
-        .args(args)
-        .kill_on_drop(true)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| format!("Failed to start Studio MCP server: {e}"))?;
-
-    let result = async {
-        let stdin = child
-            .stdin
-            .as_mut()
-            .ok_or_else(|| "Studio MCP stdin unavailable".to_string())?;
-        write_mcp_message(
-            stdin,
-            &serde_json::json!({
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "initialize",
-                "params": {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {},
-                    "clientInfo": { "name": "bloxbot", "version": env!("CARGO_PKG_VERSION") }
-                }
-            }),
-        )
-        .await?;
-
-        let stdout = child
-            .stdout
-            .as_mut()
-            .ok_or_else(|| "Studio MCP stdout unavailable".to_string())?;
-        read_mcp_response(stdout, 1).await?;
-
-        let stdin = child
-            .stdin
-            .as_mut()
-            .ok_or_else(|| "Studio MCP stdin unavailable".to_string())?;
-        write_mcp_message(
-            stdin,
-            &serde_json::json!({
-                "jsonrpc": "2.0",
-                "method": "notifications/initialized",
-                "params": {}
-            }),
-        )
-        .await?;
-        write_mcp_message(
-            stdin,
-            &serde_json::json!({
-                "jsonrpc": "2.0",
-                "id": 2,
-                "method": "tools/call",
-                "params": { "name": "list_roblox_studios", "arguments": {} }
-            }),
-        )
-        .await?;
-
-        let stdout = child
-            .stdout
-            .as_mut()
-            .ok_or_else(|| "Studio MCP stdout unavailable".to_string())?;
-        let response = read_mcp_response(stdout, 2).await?;
-        if let Some(error) = response.get("error") {
-            return Err(format!("Studio MCP tool returned error: {error}"));
-        }
-        Ok(extract_studio_instances(&response))
-    }
-    .await;
-
-    let _ = child.kill().await;
-    result
-}
-
-async fn write_mcp_message(
-    stdin: &mut tokio::process::ChildStdin,
-    payload: &serde_json::Value,
-) -> Result<(), String> {
-    let body = serde_json::to_vec(payload).map_err(|e| format!("Failed to encode MCP message: {e}"))?;
-    let header = format!("Content-Length: {}\r\n\r\n", body.len());
-    stdin
-        .write_all(header.as_bytes())
-        .await
-        .map_err(|e| format!("Failed to write MCP header: {e}"))?;
-    stdin
-        .write_all(&body)
-        .await
-        .map_err(|e| format!("Failed to write MCP body: {e}"))?;
-    stdin
-        .flush()
-        .await
-        .map_err(|e| format!("Failed to flush MCP message: {e}"))
-}
-
-async fn read_mcp_response(
-    stdout: &mut ChildStdout,
-    expected_id: i64,
+async fn call_studio_bridge(
+    state: &SharedOpenCodeState,
+    method: reqwest::Method,
+    studio_id: Option<&str>,
 ) -> Result<serde_json::Value, String> {
-    loop {
-        let message = read_mcp_message(stdout).await?;
-        if message.get("id").and_then(serde_json::Value::as_i64) == Some(expected_id) {
-            return Ok(message);
+    let (port, workspace) = {
+        let state = state.lock().await;
+        if state.port == 0 {
+            return Err("OpenCode is not running".to_string());
         }
+        (state.port, state.workspace.clone())
+    };
+    let suffix = if studio_id.is_some() { "/active" } else { "" };
+    let mut url = reqwest::Url::parse(&format!(
+        "http://{LOOPBACK}:{port}/mcp/roblox-studio/studios{suffix}"
+    ))
+    .map_err(|e| format!("Failed to build Studio picker bridge URL: {e}"))?;
+    url.query_pairs_mut().append_pair("directory", &workspace);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("Failed to create Studio bridge client: {e}"))?;
+    let mut request = client.request(method, url);
+    if let Some(studio_id) = studio_id {
+        request = request
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(serde_json::json!({ "studioId": studio_id }).to_string());
     }
-}
-
-async fn read_mcp_message(stdout: &mut ChildStdout) -> Result<serde_json::Value, String> {
-    let mut header = Vec::new();
-    let mut byte = [0_u8; 1];
-    loop {
-        stdout
-            .read_exact(&mut byte)
-            .await
-            .map_err(|e| format!("Failed to read MCP header: {e}"))?;
-        header.push(byte[0]);
-        if header.ends_with(b"\r\n\r\n") {
-            break;
-        }
-        if header.len() > 8192 {
-            return Err("MCP header is too large".to_string());
-        }
-    }
-
-    let header_text =
-        String::from_utf8(header).map_err(|e| format!("Invalid MCP header encoding: {e}"))?;
-    let length = header_text
-        .lines()
-        .find_map(|line| {
-            let (name, value) = line.split_once(':')?;
-            if name.eq_ignore_ascii_case("content-length") {
-                value.trim().parse::<usize>().ok()
-            } else {
-                None
-            }
-        })
-        .ok_or_else(|| "MCP response missing Content-Length".to_string())?;
-
-    let mut body = vec![0_u8; length];
-    stdout
-        .read_exact(&mut body)
+    let response = request
+        .send()
         .await
-        .map_err(|e| format!("Failed to read MCP body: {e}"))?;
-    serde_json::from_slice(&body).map_err(|e| format!("Invalid MCP JSON response: {e}"))
+        .map_err(|e| format!("Studio picker bridge unavailable: {e}"))?;
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read Studio picker bridge response: {e}"))?;
+    if !status.is_success() {
+        let detail = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("message")
+                    .or_else(|| value.get("error"))
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string)
+            })
+            .unwrap_or_else(|| body.trim().to_string());
+        return Err(if detail.is_empty() {
+            format!("Studio picker bridge returned {status}")
+        } else {
+            format!("Studio picker bridge returned {status}: {detail}")
+        });
+    }
+    serde_json::from_str(&body).map_err(|e| format!("Malformed Studio picker bridge response: {e}"))
 }
 
-fn extract_studio_instances(value: &serde_json::Value) -> Vec<StudioInstance> {
+fn parse_studio_instances(value: &serde_json::Value) -> Result<Vec<StudioInstance>, String> {
     let mut studios = Vec::new();
-    collect_studio_instances(value, &mut studios);
-    studios
+    let mut found_list = false;
+    collect_studio_instances(value, &mut studios, &mut found_list)?;
+    if found_list {
+        Ok(studios)
+    } else {
+        Err("Studio picker bridge returned no Studio list".to_string())
+    }
 }
 
-fn collect_studio_instances(value: &serde_json::Value, studios: &mut Vec<StudioInstance>) {
+fn collect_studio_instances(
+    value: &serde_json::Value,
+    studios: &mut Vec<StudioInstance>,
+    found_list: &mut bool,
+) -> Result<(), String> {
     match value {
         serde_json::Value::Array(items) => {
             for item in items {
-                collect_studio_instances(item, studios);
+                collect_studio_instances(item, studios, found_list)?;
             }
         }
         serde_json::Value::Object(obj) => {
-            if let Some(id) = studio_id_from_object(obj) {
-                if !studios.iter().any(|studio| studio.id == id) {
-                    studios.push(StudioInstance {
-                        id,
-                        label: studio_label_from_object(obj),
-                    });
+            if let Some(items) = obj.get("studios") {
+                let items = items.as_array().ok_or_else(|| {
+                    "Studio picker response has a non-array studios field".to_string()
+                })?;
+                *found_list = true;
+                for item in items {
+                    let map = item.as_object().ok_or_else(|| {
+                        "Studio picker response contains a malformed Studio".to_string()
+                    })?;
+                    let id = studio_id_from_object(map).ok_or_else(|| {
+                        "Studio picker response contains a Studio without an ID".to_string()
+                    })?;
+                    if !studios.iter().any(|studio| studio.id == id) {
+                        studios.push(StudioInstance {
+                            name: studio_name_from_object(map)
+                                .unwrap_or_else(|| format!("Studio {id}")),
+                            active: map
+                                .get("active")
+                                .and_then(serde_json::Value::as_bool)
+                                .unwrap_or(false),
+                            id,
+                        });
+                    }
                 }
             }
             for item in obj.values() {
-                collect_studio_instances(item, studios);
+                collect_studio_instances(item, studios, found_list)?;
             }
         }
         serde_json::Value::String(text) => {
             if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(text) {
-                collect_studio_instances(&parsed, studios);
+                collect_studio_instances(&parsed, studios, found_list)?;
             }
         }
         _ => {}
     }
+    Ok(())
 }
 
 fn studio_id_from_object(map: &serde_json::Map<String, serde_json::Value>) -> Option<String> {
@@ -923,10 +857,17 @@ fn studio_id_from_object(map: &serde_json::Map<String, serde_json::Value>) -> Op
     None
 }
 
-fn studio_label_from_object(map: &serde_json::Map<String, serde_json::Value>) -> Option<String> {
-    for key in ["label", "name", "title", "place_name", "placeName", "project_name"] {
-        if let Some(label) = map.get(key).and_then(serde_json::Value::as_str) {
-            let trimmed = label.trim();
+fn studio_name_from_object(map: &serde_json::Map<String, serde_json::Value>) -> Option<String> {
+    for key in [
+        "name",
+        "label",
+        "title",
+        "place_name",
+        "placeName",
+        "project_name",
+    ] {
+        if let Some(name) = map.get(key).and_then(serde_json::Value::as_str) {
+            let trimmed = name.trim();
             if !trimmed.is_empty() {
                 return Some(trimmed.to_string());
             }
@@ -1108,6 +1049,14 @@ mod tests {
     }
 
     #[test]
+    fn plugins_do_not_override_builtin_openai_oauth() {
+        assert_eq!(OPENCODE_PLUGINS, &["opencode-gemini-auth@latest"]);
+        assert!(!OPENCODE_PLUGINS
+            .iter()
+            .any(|plugin| plugin.contains("multi-auth-codex")));
+    }
+
+    #[test]
     fn parse_sidecar_level_error() {
         assert_eq!(
             parse_sidecar_level("ERROR 2026-03-22T12:00:00 something broke"),
@@ -1186,67 +1135,51 @@ mod tests {
     #[test]
     fn extracts_studio_instances_from_direct_tool_result() {
         let value = serde_json::json!({
-            "result": {
-                "studios": [
-                    { "studio_id": 12345, "name": "Main Place" },
-                    { "studioId": "abc-123", "title": "Test Place" }
-                ]
-            }
+            "content": [{
+                "type": "text",
+                "text": "{\"studios\":[{\"id\":\"12345\",\"name\":\"Main Place\",\"active\":true},{\"id\":\"abc-123\",\"name\":\"Tést 世界\",\"active\":false}]}"
+            }]
         });
 
         assert_eq!(
-            extract_studio_instances(&value),
+            parse_studio_instances(&value).unwrap(),
             vec![
                 StudioInstance {
                     id: "12345".to_string(),
-                    label: Some("Main Place".to_string()),
+                    name: "Main Place".to_string(),
+                    active: true,
                 },
                 StudioInstance {
                     id: "abc-123".to_string(),
-                    label: Some("Test Place".to_string()),
+                    name: "Tést 世界".to_string(),
+                    active: false,
                 },
             ]
         );
     }
 
     #[test]
-    fn extracts_studio_instances_from_mcp_text_json() {
-        let value = serde_json::json!({
-            "result": {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": "{\"instances\":[{\"id\":67890,\"placeName\":\"Arena\"}]}"
-                    }
-                ]
-            }
-        });
-
-        assert_eq!(
-            extract_studio_instances(&value),
-            vec![StudioInstance {
-                id: "67890".to_string(),
-                label: Some("Arena".to_string()),
-            }]
-        );
+    fn extracts_empty_studio_list() {
+        let value =
+            serde_json::json!({ "content": [{ "type": "text", "text": "{\"studios\":[]}" }] });
+        assert_eq!(parse_studio_instances(&value).unwrap(), Vec::new());
     }
 
     #[test]
-    fn extracts_studio_instances_dedupes_ids() {
-        let value = serde_json::json!({
-            "studios": [
-                { "studio_id": "same-id", "name": "First" },
-                { "instance_id": "same-id", "name": "Second" }
-            ]
-        });
+    fn rejects_malformed_studio_data() {
+        let value =
+            serde_json::json!({ "content": [{ "type": "text", "text": "{\"studios\":{}}" }] });
+        assert!(parse_studio_instances(&value)
+            .unwrap_err()
+            .contains("non-array"));
+    }
 
-        assert_eq!(
-            extract_studio_instances(&value),
-            vec![StudioInstance {
-                id: "same-id".to_string(),
-                label: Some("First".to_string()),
-            }]
-        );
+    #[test]
+    fn rejects_missing_studio_list() {
+        let value = serde_json::json!({ "content": [{ "type": "text", "text": "not json" }] });
+        assert!(parse_studio_instances(&value)
+            .unwrap_err()
+            .contains("no Studio list"));
     }
 
     #[tokio::test]

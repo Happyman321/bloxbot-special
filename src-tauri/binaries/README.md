@@ -25,12 +25,22 @@ chat titles use lightweight models without changing the visible chat request:
 - xAI titles use `grok-4.5`.
 
 Run `powershell -ExecutionPolicy Bypass -File scripts/build-opencode-sidecar.ps1`
-from the repository root to rebuild the Windows sidecar (requires Bun 1.3.14 on
-`PATH`). The script checks that the matching versioned patch applies before
-replacing the local binary. It builds OpenCode's regular Windows x64 binary;
+from the repository root to rebuild the Windows sidecar (requires Bun 1.3.14
+and the native Node build prerequisites on `PATH`; `-PythonPath` can select a
+Python executable explicitly). The script checks that the OpenCode 1.17.19 versioned patch applies
+before replacing the local binary. This OpenCode release provides the GPT-5.6
+Responses Lite transport and authentication-aware model filtering used by
+BloxBot's built-in single-account ChatGPT OAuth flow. It builds OpenCode's
+regular Windows x64 binary;
 the upstream baseline variant needs a second Bun runtime download and is not
 needed for BloxBot's title routing. When upgrading OpenCode, add and review a
 patch for the new version first.
+
+OpenAI authentication uses OpenCode's built-in single-account ChatGPT OAuth
+transport. Upgrading does not delete existing credentials or the inactive
+multi-auth plugin cache. If a credential created by the former multi-auth
+transport cannot refresh and returns HTTP 401, reconnect ChatGPT once from
+BloxBot Settings; subsequent refreshes use the built-in transport.
 
 ## Node.js Runtime
 

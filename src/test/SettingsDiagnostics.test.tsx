@@ -73,8 +73,6 @@ function seedState(queryClient: QueryClient) {
     sessionFolderById: {},
     activeWorkspace: "all",
     folderOpenState: {},
-    preferredStudioId: null,
-    knownStudioIds: [],
     folderInstructionsByName: {},
   });
 }

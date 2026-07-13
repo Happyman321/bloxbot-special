@@ -8,6 +8,7 @@ import type {
 } from "@opencode-ai/sdk/v2/client";
 import type { QueryClient } from "@tanstack/react-query";
 
+import { chatErrorMessage, isChatAbortError } from "@/lib/chatErrors";
 import { claimDictatorManagedSession, type DictatorProfile } from "@/lib/dictators";
 import { upsertSessionById } from "@/lib/dictatorWorkers";
 import { recordSessionStatus, recordSseEvent } from "@/lib/diagnostics";
@@ -112,6 +113,7 @@ export function sseDispatch(
       case "session.status": {
         const { sessionID, status } = event.properties;
         recordSessionStatus(sessionID, status.type);
+        if (status.type === "busy") queryClient.setQueryData(qk.chatError(sessionID), null);
         queryClient.setQueryData<Record<string, SessionStatus>>(qk.statuses, (prev) => {
           if (prev?.[sessionID]?.type === status.type) return prev;
           return { ...prev, [sessionID]: status };
@@ -144,6 +146,30 @@ export function sseDispatch(
             messagesById: { ...prev.messagesById, [info.id]: { info, parts: [] } },
           };
         });
+        if (info.role === "user") queryClient.setQueryData(qk.chatError(info.sessionID), null);
+        if (info.role === "assistant" && "error" in info && info.error) {
+          recordSessionStatus(info.sessionID, "idle");
+          queryClient.setQueryData<Record<string, SessionStatus>>(qk.statuses, (prev) => ({
+            ...prev,
+            [info.sessionID]: { type: "idle" } as SessionStatus,
+          }));
+        }
+        break;
+      }
+      case "session.error": {
+        const sessionID = event.properties.sessionID ?? currentSessionId;
+        if (!sessionID) break;
+        queryClient.setQueryData(
+          qk.chatError(sessionID),
+          isChatAbortError(event.properties.error)
+            ? null
+            : chatErrorMessage(event.properties.error),
+        );
+        recordSessionStatus(sessionID, "idle");
+        queryClient.setQueryData<Record<string, SessionStatus>>(qk.statuses, (prev) => ({
+          ...prev,
+          [sessionID]: { type: "idle" } as SessionStatus,
+        }));
         break;
       }
       case "message.part.updated": {

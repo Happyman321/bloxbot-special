@@ -326,6 +326,85 @@ describe("sseDispatch", () => {
       const cache = requireData(qc.getQueryData<MessagesCache>(qk.messages("s1")));
       expect(cache.messageIds).toEqual(["m1"]);
     });
+
+    it("marks a failed assistant message idle so thinking stops", () => {
+      qc.setQueryData(qk.statuses, { s1: { type: "busy" } as SessionStatus });
+
+      dispatch(
+        qc,
+        {
+          type: "message.updated",
+          properties: {
+            info: {
+              id: "m1",
+              sessionID: "s1",
+              role: "assistant",
+              error: { name: "UnknownError", data: { message: "Model unavailable" } },
+            },
+          },
+        },
+        "s1",
+      );
+
+      const statuses = requireData(qc.getQueryData<Record<string, SessionStatus>>(qk.statuses));
+      expect(statuses.s1.type).toBe("idle");
+    });
+  });
+
+  describe("session.error", () => {
+    it("stores the reason and marks the affected session idle", () => {
+      qc.setQueryData(qk.statuses, { s1: { type: "busy" } as SessionStatus });
+
+      dispatch(
+        qc,
+        {
+          type: "session.error",
+          properties: {
+            sessionID: "s1",
+            error: { name: "ProviderAuthError", data: { message: "Reconnect ChatGPT" } },
+          },
+        },
+        "s1",
+      );
+
+      expect(qc.getQueryData(qk.chatError("s1"))).toBe("Reconnect ChatGPT");
+      const statuses = requireData(qc.getQueryData<Record<string, SessionStatus>>(qk.statuses));
+      expect(statuses.s1.type).toBe("idle");
+    });
+
+    it("uses the active session when the event omits a session ID", () => {
+      dispatch(
+        qc,
+        {
+          type: "session.error",
+          properties: { error: { name: "UnknownError", data: { message: "Request failed" } } },
+        },
+        "s1",
+      );
+
+      expect(qc.getQueryData(qk.chatError("s1"))).toBe("Request failed");
+    });
+
+    it("stops busy state without showing an error for a user abort", () => {
+      qc.setQueryData(qk.chatError("s1"), "Old error");
+      qc.setQueryData(qk.statuses, { s1: { type: "busy" } as SessionStatus });
+
+      dispatch(
+        qc,
+        {
+          type: "session.error",
+          properties: {
+            sessionID: "s1",
+            error: { name: "MessageAbortedError", data: { message: "Aborted" } },
+          },
+        },
+        "s1",
+      );
+
+      expect(qc.getQueryData(qk.chatError("s1"))).toBeNull();
+      const statuses = requireData(qc.getQueryData<Record<string, SessionStatus>>(qk.statuses));
+      expect(statuses.s1.type).toBe("idle");
+    });
   });
 
   describe("message.part.updated", () => {

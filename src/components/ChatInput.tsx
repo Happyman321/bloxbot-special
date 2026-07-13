@@ -23,7 +23,8 @@ interface ImageAttachment {
 
 interface StudioInstance {
   id: string;
-  label?: string;
+  name: string;
+  active: boolean;
 }
 
 interface SpeechRecognitionConstructor {
@@ -281,9 +282,7 @@ function ChatInput() {
     setSelectedAgent,
     setSelectedVariant,
     preferredStudioId,
-    knownStudioIds,
     setPreferredStudioId,
-    addKnownStudioId,
   } = usePreferences();
   const sendMessage = useSendMessage();
 
@@ -306,6 +305,8 @@ function ChatInput() {
   const [showStudioPicker, setShowStudioPicker] = useState(false);
   const [loadingStudios, setLoadingStudios] = useState(false);
   const [reconnectingStudio, setReconnectingStudio] = useState(false);
+  const [selectingStudioId, setSelectingStudioId] = useState<string | null>(null);
+  const [studioError, setStudioError] = useState<string | null>(null);
   const [detectedStudios, setDetectedStudios] = useState<StudioInstance[]>([]);
   const [modelSearch, setModelSearch] = useState("");
   const [rejectShake, setRejectShake] = useState(false);
@@ -589,34 +590,36 @@ function ChatInput() {
     const byId = new Map<string, StudioInstance>();
     for (const studio of detectedStudios) {
       const id = studio.id.trim();
-      if (id) byId.set(id, { id, label: studio.label?.trim() || undefined });
-    }
-    for (const id of knownStudioIds) {
-      const normalized = id.trim();
-      if (normalized && !byId.has(normalized)) byId.set(normalized, { id: normalized });
+      if (id) {
+        byId.set(id, {
+          id,
+          name: studio.name.trim() || `Studio ${id}`,
+          active: studio.active,
+        });
+      }
     }
     return [...byId.values()];
-  }, [detectedStudios, knownStudioIds]);
+  }, [detectedStudios]);
 
   const refreshStudios = useCallback(async () => {
     setLoadingStudios(true);
+    setStudioError(null);
     try {
       const studios = await invoke<StudioInstance[]>("list_roblox_studios");
       setDetectedStudios(studios);
-      if (studios.length > 0) {
-        for (const studio of studios) addKnownStudioId(studio.id);
-      }
     } catch (err) {
       console.error("Failed to detect Roblox Studio sessions:", err);
       setDetectedStudios([]);
+      setStudioError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoadingStudios(false);
     }
-  }, [addKnownStudioId]);
+  }, []);
 
   const reconnectStudio = useCallback(async () => {
     setReconnectingStudio(true);
     setLoadingStudios(true);
+    setStudioError(null);
     try {
       if (!client) {
         throw new Error("OpenCode is not ready yet");
@@ -631,7 +634,6 @@ function ChatInput() {
       await client.mcp.connect({ name: "roblox-studio" });
       const studios = await invoke<StudioInstance[]>("list_roblox_studios");
       setDetectedStudios(studios);
-      for (const studio of studios) addKnownStudioId(studio.id);
 
       if (studios.length > 0) {
         toast.success("Reconnected to Roblox Studio");
@@ -641,6 +643,7 @@ function ChatInput() {
     } catch (err) {
       console.error("Failed to reconnect Roblox Studio MCP:", err);
       setDetectedStudios([]);
+      setStudioError(err instanceof Error ? err.message : String(err));
       toast.error("Could not reconnect to Roblox Studio", {
         description: err instanceof Error ? err.message : String(err),
       });
@@ -648,7 +651,54 @@ function ChatInput() {
       setLoadingStudios(false);
       setReconnectingStudio(false);
     }
-  }, [addKnownStudioId, client]);
+  }, [client]);
+
+  const selectStudio = useCallback(
+    async (studio: StudioInstance) => {
+      if (isBusy) return;
+      setSelectingStudioId(studio.id);
+      setStudioError(null);
+      try {
+        await invoke("set_active_roblox_studio", { studioId: studio.id });
+        setPreferredStudioId(studio.id);
+        setDetectedStudios((current) =>
+          current.map((item) => ({ ...item, active: item.id === studio.id })),
+        );
+        setShowStudioPicker(false);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setStudioError(message);
+        toast.error("Could not select Roblox Studio", { description: message });
+      } finally {
+        setSelectingStudioId(null);
+      }
+    },
+    [isBusy, setPreferredStudioId],
+  );
+
+  const selectAutoStudio = useCallback(async () => {
+    if (isBusy) return;
+    setPreferredStudioId(null);
+    setShowStudioPicker(false);
+    if (!client) return;
+
+    setReconnectingStudio(true);
+    try {
+      try {
+        await client.mcp.disconnect({ name: "roblox-studio" });
+      } catch (err) {
+        console.warn("Unable to disconnect Studio MCP while returning to Auto mode:", err);
+      }
+      await client.mcp.connect({ name: "roblox-studio" });
+    } catch (err) {
+      toast.warning("Auto detect is enabled, but Studio reconnect failed", {
+        description: "Chats will still use the original AI-driven Studio selection flow.",
+      });
+      console.warn("Unable to reset Studio MCP active target:", err);
+    } finally {
+      setReconnectingStudio(false);
+    }
+  }, [client, isBusy, setPreferredStudioId]);
 
   useEffect(() => {
     if (!showStudioPicker) return;
@@ -690,16 +740,10 @@ function ChatInput() {
     : "Select model";
   const agentDisplay = selectedAgent ?? "Default agent";
 
-  const studioDisplay = preferredStudioId ? `Studio ${preferredStudioId}` : "Auto studio";
-
-  function handleAddStudioId() {
-    const entered = window.prompt("Enter Roblox Studio instance ID");
-    const normalized = entered?.trim();
-    if (!normalized) return;
-    addKnownStudioId(normalized);
-    setPreferredStudioId(normalized);
-    setShowStudioPicker(false);
-  }
+  const selectedStudio = availableStudios.find((studio) => studio.id === preferredStudioId);
+  const studioDisplay = preferredStudioId
+    ? (selectedStudio?.name ?? `Studio ${preferredStudioId}`)
+    : "Auto detect";
 
   function statusBadge(status?: string) {
     if (status === "beta")
@@ -903,6 +947,7 @@ function ChatInput() {
               setShowModelPicker(false);
               setShowAgentPicker(false);
             }}
+            disabled={isBusy}
             className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             title="Pick a Roblox Studio instance"
           >
@@ -924,57 +969,60 @@ function ChatInput() {
           {showStudioPicker && (
             <div className="absolute bottom-full left-0 z-50 mb-1 w-56 rounded-lg border bg-popover p-1 shadow-lg">
               <button
-                onClick={() => {
-                  setPreferredStudioId(null);
-                  setShowStudioPicker(false);
-                }}
+                onClick={selectAutoStudio}
+                disabled={isBusy || reconnectingStudio}
                 className={`flex w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors ${preferredStudioId === null ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
               >
-                Auto-select studio
+                Auto detect
               </button>
               {availableStudios.map((studio) => (
                 <button
                   key={studio.id}
-                  onClick={() => {
-                    setPreferredStudioId(studio.id);
-                    setShowStudioPicker(false);
-                  }}
+                  onClick={() => selectStudio(studio)}
+                  disabled={isBusy || selectingStudioId !== null}
                   className={`flex w-full flex-col rounded-md px-2 py-1.5 text-left text-xs transition-colors ${preferredStudioId === studio.id ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
                 >
-                  <span className="truncate">{studio.label ?? `Studio ${studio.id}`}</span>
-                  {studio.label && (
-                    <span className="mt-0.5 truncate text-[10px] text-muted-foreground">
-                      {studio.id}
-                    </span>
-                  )}
+                  <span className="flex w-full items-center gap-1 truncate">
+                    <span className="truncate">{studio.name}</span>
+                    {studio.active && (
+                      <span className="shrink-0 rounded bg-emerald-100 px-1 text-[9px] font-medium text-emerald-700">
+                        active
+                      </span>
+                    )}
+                  </span>
+                  <span className="mt-0.5 truncate text-[10px] text-muted-foreground">
+                    {selectingStudioId === studio.id ? "Selecting…" : studio.id}
+                  </span>
                 </button>
               ))}
-              {availableStudios.length === 0 && (
+              {loadingStudios && availableStudios.length === 0 && (
                 <div className="px-2 py-2 text-xs text-muted-foreground">
-                  {loadingStudios
-                    ? "Looking for active Studio sessions…"
-                    : "No active Studio sessions detected yet."}
+                  Looking for open Studio sessions…
+                </div>
+              )}
+              {!loadingStudios && studioError && (
+                <div className="px-2 py-2 text-xs text-destructive">
+                  Picker bridge unavailable: {studioError}
+                </div>
+              )}
+              {!loadingStudios && !studioError && availableStudios.length === 0 && (
+                <div className="px-2 py-2 text-xs text-muted-foreground">
+                  No open Roblox Studio sessions found.
                 </div>
               )}
               <button
                 onClick={refreshStudios}
-                disabled={loadingStudios || reconnectingStudio}
+                disabled={isBusy || loadingStudios || reconnectingStudio}
                 className="mt-1 flex w-full rounded-md border px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {loadingStudios ? "Refreshing…" : "Refresh Studio list"}
               </button>
               <button
                 onClick={reconnectStudio}
-                disabled={loadingStudios || reconnectingStudio || !client}
+                disabled={isBusy || loadingStudios || reconnectingStudio || !client}
                 className="mt-1 flex w-full rounded-md border px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {reconnectingStudio ? "Reconnecting..." : "Reconnect to Studio"}
-              </button>
-              <button
-                onClick={handleAddStudioId}
-                className="mt-1 flex w-full rounded-md border px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-              >
-                + Enter Studio ID manually…
               </button>
             </div>
           )}

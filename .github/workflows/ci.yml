@@ -14,7 +14,7 @@ concurrency:
 
 env:
   NODE_VERSION: "22.13.1"
-  OPENCODE_VERSION: "1.17.18"
+  OPENCODE_VERSION: "1.17.19"
 
 jobs:
   build:
@@ -121,15 +121,19 @@ jobs:
         shell: bash
         run: |
           source_dir="$RUNNER_TEMP/opencode"
-          patch_file="$GITHUB_WORKSPACE/patches/opencode/${{ env.OPENCODE_VERSION }}-title-model-routing.patch"
+          title_patch="$GITHUB_WORKSPACE/patches/opencode/${{ env.OPENCODE_VERSION }}-title-model-routing.patch"
+          studio_patch="$GITHUB_WORKSPACE/patches/opencode/${{ env.OPENCODE_VERSION }}-studio-picker.patch"
           output_file="$GITHUB_WORKSPACE/src-tauri/binaries/opencode-${{ matrix.target }}${{ matrix.ext }}"
 
           git clone --depth 1 --branch "v${{ env.OPENCODE_VERSION }}" https://github.com/anomalyco/opencode.git "$source_dir"
-          git -C "$source_dir" apply --check "$patch_file"
-          git -C "$source_dir" apply "$patch_file"
+          git -C "$source_dir" apply --check "$title_patch"
+          git -C "$source_dir" apply "$title_patch"
+          git -C "$source_dir" apply --check "$studio_patch"
+          git -C "$source_dir" apply "$studio_patch"
 
           cd "$source_dir"
           bun install --frozen-lockfile
+          bun --cwd packages/opencode test test/plugin/codex.test.ts test/session/title-model-routing.test.ts test/server/httpapi-mcp-oauth.test.ts
           OPENCODE_VERSION="${{ env.OPENCODE_VERSION }}" bun run --cwd packages/opencode build -- --single --skip-install
 
           mkdir -p "$(dirname "$output_file")"

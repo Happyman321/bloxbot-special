@@ -23,7 +23,6 @@ interface PreferencesContextValue {
   activeWorkspace: string;
   folderOpenState: Record<string, boolean>;
   preferredStudioId: string | null;
-  knownStudioIds: string[];
   folderInstructionsByName: Record<string, string>;
   workspaceSettingsByName: Record<string, WorkspaceSettings>;
   setSelectedModel: (modelID: string) => void;
@@ -37,7 +36,6 @@ interface PreferencesContextValue {
   setActiveWorkspace: (workspace: string) => void;
   toggleFolderOpen: (folderKey: string) => void;
   setPreferredStudioId: (studioId: string | null) => void;
-  addKnownStudioId: (studioId: string) => void;
   setFolderInstructions: (folderName: string, instructions: string) => void;
   updateWorkspaceSettings: (folderName: string, settings: Partial<WorkspaceSettings>) => void;
 }
@@ -68,7 +66,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [activeWorkspace, setActiveWorkspaceState] = useState("all");
   const [folderOpenState, setFolderOpenState] = useState<Record<string, boolean>>({});
   const [preferredStudioId, setPreferredStudioIdState] = useState<string | null>(null);
-  const [knownStudioIds, setKnownStudioIds] = useState<string[]>([]);
   const [folderInstructionsByName, setFolderInstructionsByName] = useState<Record<string, string>>(
     {},
   );
@@ -87,8 +84,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setSessionFolderById(configData.sessionFolderById ?? {});
     setActiveWorkspaceState(configData.activeWorkspace ?? "all");
     setFolderOpenState(configData.folderOpenState ?? {});
-    setPreferredStudioIdState(configData.preferredStudioId ?? null);
-    setKnownStudioIds(configData.knownStudioIds ?? []);
     setFolderInstructionsByName(configData.folderInstructionsByName ?? {});
     setWorkspaceSettingsByName(configData.workspaceSettingsByName ?? {});
   }, [configData]);
@@ -257,19 +252,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const setPreferredStudioId = useCallback((studioId: string | null) => {
     const normalized = studioId?.trim() || null;
     setPreferredStudioIdState(normalized);
-    patchConfig({ preferredStudioId: normalized }).catch(() => {});
-  }, []);
-
-  const addKnownStudioId = useCallback((studioId: string) => {
-    const normalized = studioId.trim();
-    if (!normalized) return;
-
-    setKnownStudioIds((prev) => {
-      if (prev.includes(normalized)) return prev;
-      const next = [...prev, normalized].sort((a, b) => a.localeCompare(b));
-      patchConfig({ knownStudioIds: next }).catch(() => {});
-      return next;
-    });
   }, []);
 
   const setFolderInstructions = useCallback((folderName: string, instructions: string) => {
@@ -350,7 +332,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     activeWorkspace,
     folderOpenState,
     preferredStudioId,
-    knownStudioIds,
     folderInstructionsByName,
     workspaceSettingsByName,
     setSelectedModel,
@@ -364,7 +345,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setActiveWorkspace,
     toggleFolderOpen,
     setPreferredStudioId,
-    addKnownStudioId,
     setFolderInstructions,
     updateWorkspaceSettings,
   };

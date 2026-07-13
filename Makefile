@@ -13,7 +13,7 @@ SHELL := /bin/bash
 
 # ── Versions ─────────────────────────────────────────────────────────────
 NODE_VERSION   := 22.13.1
-OPENCODE_VERSION := 1.17.18
+OPENCODE_VERSION := 1.17.19
 
 # ── Platform detection ───────────────────────────────────────────────────
 UNAME_S := $(shell uname -s)

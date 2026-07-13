@@ -29,6 +29,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             opencode::get_opencode_info,
             opencode::list_roblox_studios,
+            opencode::set_active_roblox_studio,
             vscode_bridge::get_vscode_bridge_info
         ])
         .setup(|app| {

@@ -1,0 +1,237 @@
+diff --git a/packages/opencode/src/server/routes/instance/httpapi/groups/mcp.ts b/packages/opencode/src/server/routes/instance/httpapi/groups/mcp.ts
+index a6fb064..039a4dc 100644
+--- a/packages/opencode/src/server/routes/instance/httpapi/groups/mcp.ts
++++ b/packages/opencode/src/server/routes/instance/httpapi/groups/mcp.ts
+@@ -2,7 +2,7 @@ import { MCP } from "@/mcp"
+ import { ConfigMCPV1 } from "@opencode-ai/core/v1/config/mcp"
+ import { Schema } from "effect"
+ import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+-import { McpServerNotFoundError } from "../errors"
++import { McpServerNotFoundError, ServiceUnavailableError, UpstreamError } from "../errors"
+ import { Authorization } from "../middleware/authorization"
+ import { InstanceContextMiddleware } from "../middleware/instance-context"
+ import { WorkspaceRoutingMiddleware, WorkspaceRoutingQuery } from "../middleware/workspace-routing"
+@@ -24,6 +24,14 @@ export const AuthCallbackPayload = Schema.Struct({
+ export const AuthRemoveResponse = Schema.Struct({
+   success: Schema.Literal(true),
+ })
++export const StudioToolResponse = Schema.Struct({
++  content: Schema.Array(Schema.Unknown),
++  structuredContent: Schema.optional(Schema.Unknown),
++  isError: Schema.optional(Schema.Boolean),
++})
++export const SetActiveStudioPayload = Schema.Struct({
++  studioId: Schema.String.check(Schema.isNonEmpty()),
++})
+ export class UnsupportedOAuthError extends Schema.ErrorClass<UnsupportedOAuthError>("McpUnsupportedOAuthError")(
+   { error: Schema.String },
+   { httpApiStatus: 400 },
+@@ -36,6 +44,8 @@ export const McpPaths = {
+   authAuthenticate: "/mcp/:name/auth/authenticate",
+   connect: "/mcp/:name/connect",
+   disconnect: "/mcp/:name/disconnect",
++  studios: "/mcp/:name/studios",
++  activeStudio: "/mcp/:name/studios/active",
+ } as const
+
+export const McpApi = HttpApi.make("mcp")
+@@ -136,6 +146,31 @@ export const McpApi = HttpApi.make("mcp")
+             description: "Disconnect an MCP server.",
+           }),
+         ),
++        HttpApiEndpoint.get("studios", McpPaths.studios, {
++          params: { name: Schema.String },
++          query: WorkspaceRoutingQuery,
++          success: described(StudioToolResponse, "Connected Roblox Studio instances"),
++          error: [McpServerNotFoundError, ServiceUnavailableError, UpstreamError],
++        }).annotateMerge(
++          OpenApi.annotations({
++            identifier: "mcp.studios.list",
++            summary: "List Roblox Studio instances",
++            description: "Call the restricted list_roblox_studios tool on an existing MCP connection.",
++          }),
++        ),
++        HttpApiEndpoint.post("activeStudio", McpPaths.activeStudio, {
++          params: { name: Schema.String },
++          query: WorkspaceRoutingQuery,
++          payload: SetActiveStudioPayload,
++          success: described(StudioToolResponse, "Active Roblox Studio updated"),
++          error: [McpServerNotFoundError, ServiceUnavailableError, UpstreamError],
++        }).annotateMerge(
++          OpenApi.annotations({
++            identifier: "mcp.studios.setActive",
++            summary: "Set the active Roblox Studio instance",
++            description: "Call the restricted set_active_studio tool on an existing MCP connection.",
++          }),
++        ),
+       )
+       .annotateMerge(
+         OpenApi.annotations({
+diff --git a/packages/opencode/src/server/routes/instance/httpapi/handlers/mcp.ts b/packages/opencode/src/server/routes/instance/httpapi/handlers/mcp.ts
+index cdf0cc1..b036a89 100644
+--- a/packages/opencode/src/server/routes/instance/httpapi/handlers/mcp.ts
++++ b/packages/opencode/src/server/routes/instance/httpapi/handlers/mcp.ts
+@@ -1,9 +1,17 @@
+ import { MCP } from "@/mcp"
++import { McpCatalog } from "@/mcp/catalog"
++import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js"
+ import { Effect, Schema } from "effect"
+ import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
+ import { InstanceHttpApi } from "../api"
+-import { McpServerNotFoundError } from "../errors"
+-import { AddPayload, AuthCallbackPayload, StatusMap, UnsupportedOAuthError } from "../groups/mcp"
++import { McpServerNotFoundError, ServiceUnavailableError, UpstreamError } from "../errors"
++import {
++  AddPayload,
++  AuthCallbackPayload,
++  SetActiveStudioPayload,
++  StatusMap,
++  UnsupportedOAuthError,
++} from "../groups/mcp"
+
+export const mcpHandlers = HttpApiBuilder.group(InstanceHttpApi, "mcp", (handlers) =>
+   Effect.gen(function* () {
+@@ -98,6 +106,70 @@ export const mcpHandlers = HttpApiBuilder.group(InstanceHttpApi, "mcp", (handler
+       return true
+     })
+
++    const callStudioTool = Effect.fn("McpHttpApi.callStudioTool")(function* (
++      serverName: string,
++      toolName: "list_roblox_studios" | "set_active_studio",
++      args: Record<string, unknown>,
++    ) {
++      const status = yield* mcp.status()
++      if (!(serverName in status)) {
++        return yield* new McpServerNotFoundError({
++          name: serverName,
++          message: `MCP server not found: ${serverName}`,
++        })
++      }
++
++      const entry = (yield* mcp.tools())[McpCatalog.toolName(serverName, toolName)]
++      if (!entry) {
++        return yield* new ServiceUnavailableError({
++          service: serverName,
++          message: `MCP server ${serverName} is not connected or does not expose ${toolName}`,
++        })
++      }
++
++      const result = yield* Effect.tryPromise({
++        try: () =>
++          entry.client.callTool({ name: toolName, arguments: args }, CallToolResultSchema, {
++            resetTimeoutOnProgress: true,
++            timeout: entry.timeout,
++            onprogress: () => {},
++          }),
++        catch: (error) =>
++          new UpstreamError({
++            service: serverName,
++            message: error instanceof Error ? error.message : String(error),
++          }),
++      })
++
++      if (result.isError) {
++        const message = result.content
++          .flatMap((item) => (item.type === "text" ? [item.text] : []))
++          .filter((text) => text.trim())
++          .join("\n\n")
++        return yield* new UpstreamError({
++          service: serverName,
++          message: message || `${toolName} returned an error`,
++        })
++      }
++
++      return {
++        content: result.content,
++        ...(result.structuredContent === undefined ? {} : { structuredContent: result.structuredContent }),
++        ...(result.isError === undefined ? {} : { isError: result.isError }),
++      }
++    })
++
++    const studios = Effect.fn("McpHttpApi.studios")(function* (ctx: { params: { name: string } }) {
++      return yield* callStudioTool(ctx.params.name, "list_roblox_studios", {})
++    })
++
++    const activeStudio = Effect.fn("McpHttpApi.activeStudio")(function* (ctx: {
++      params: { name: string }
++      payload: typeof SetActiveStudioPayload.Type
++    }) {
++      return yield* callStudioTool(ctx.params.name, "set_active_studio", { studio_id: ctx.payload.studioId })
++    })
++
+     return handlers
+       .handle("status", status)
+       .handle("add", add)
+@@ -107,5 +179,7 @@ export const mcpHandlers = HttpApiBuilder.group(InstanceHttpApi, "mcp", (handler
+       .handle("authRemove", authRemove)
+       .handle("connect", connect)
+       .handle("disconnect", disconnect)
++      .handle("studios", studios)
++      .handle("activeStudio", activeStudio)
+   }),
+ )
+diff --git a/packages/opencode/test/server/httpapi-mcp-oauth.test.ts b/packages/opencode/test/server/httpapi-mcp-oauth.test.ts
+index d3ca4ae..ef529f7 100644
+--- a/packages/opencode/test/server/httpapi-mcp-oauth.test.ts
++++ b/packages/opencode/test/server/httpapi-mcp-oauth.test.ts
+@@ -27,7 +27,22 @@ const testMcpHandlers = HttpApiBuilder.group(TestHttpApi, "mcp", (handlers) =>
+       .handle("authAuthenticate", () => Effect.die("unexpected MCP authAuthenticate"))
+       .handle("authRemove", () => Effect.die("unexpected MCP authRemove"))
+       .handle("connect", () => Effect.die("unexpected MCP connect"))
+-      .handle("disconnect", () => Effect.die("unexpected MCP disconnect")),
++      .handle("disconnect", () => Effect.die("unexpected MCP disconnect"))
++      .handle("studios", () =>
++        Effect.succeed({
++          content: [
++            {
++              type: "text",
++              text: JSON.stringify({ studios: [{ id: "studio-1", name: "Test Place", active: true }] }),
++            },
++          ],
++        }),
++      )
++      .handle("activeStudio", (ctx) =>
++        Effect.succeed({
++          content: [{ type: "text", text: `Active studio set to ${ctx.payload.studioId}` }],
++        }),
++      ),
+   ),
+ )
+
+@@ -70,4 +85,36 @@ describe("mcp HttpApi OAuth", () => {
+       })
+     }),
+   )
++
++  it.live("returns connected Roblox Studio instances", () =>
++    Effect.gen(function* () {
++      const response = yield* HttpClientRequest.get(McpPaths.studios.replace(":name", "roblox-studio")).pipe(
++        HttpClient.execute,
++      )
++
++      expect(response.status).toBe(200)
++      expect(yield* response.json).toEqual({
++        content: [
++          {
++            type: "text",
++            text: JSON.stringify({ studios: [{ id: "studio-1", name: "Test Place", active: true }] }),
++          },
++        ],
++      })
++    }),
++  )
++
++  it.live("forwards the selected Studio ID", () =>
++    Effect.gen(function* () {
++      const response = yield* HttpClientRequest.post(McpPaths.activeStudio.replace(":name", "roblox-studio")).pipe(
++        HttpClientRequest.bodyJson({ studioId: "studio-1" }),
++        Effect.flatMap(HttpClient.execute),
++      )
++
++      expect(response.status).toBe(200)
++      expect(yield* response.json).toEqual({
++        content: [{ type: "text", text: "Active studio set to studio-1" }],
++      })
++    }),
++  )
+ })

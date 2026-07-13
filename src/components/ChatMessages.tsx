@@ -24,11 +24,13 @@ const REMARK_PLUGINS = [remarkGfm];
 
 import { useAnswerQuestion, useRejectQuestion } from "@/hooks/mutations/useAnswerQuestion";
 import { useReplyPermission } from "@/hooks/mutations/useReplyPermission";
+import { useChatError } from "@/hooks/useChatError";
 import { useMessage, useMessageIds } from "@/hooks/useMessages";
 import { useActivePermission } from "@/hooks/usePermissions";
 import { useActiveQuestion } from "@/hooks/useQuestions";
 import { useIsBusy } from "@/hooks/useSessionStatuses";
 import { useTodos } from "@/hooks/useTodos";
+import { chatErrorMessage, isChatAbortError } from "@/lib/chatErrors";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 
 // ── Image lightbox ───────────────────────────────────────────────────────
@@ -1343,6 +1345,11 @@ const MessageBubble = memo(function MessageBubble({
   if (!msg) return null;
 
   const isUser = msg.info.role === "user";
+  const hasMessageError = !isUser && "error" in msg.info && Boolean(msg.info.error);
+  const messageError =
+    hasMessageError && "error" in msg.info && !isChatAbortError(msg.info.error)
+      ? chatErrorMessage(msg.info.error)
+      : null;
 
   return (
     <div className={`animate-fade-in-up flex ${isUser ? "justify-end" : "justify-start"}`}>
@@ -1353,20 +1360,34 @@ const MessageBubble = memo(function MessageBubble({
           <UserPartsView parts={msg.parts} />
         ) : (
           <div className="space-y-1">
-            {msg.parts.length === 0 && <BloxBotThinking />}
+            {msg.parts.length === 0 && !hasMessageError && <BloxBotThinking />}
             {msg.parts.map((part) => (
               <PartRenderer key={part.id} part={part} />
             ))}
-            {"error" in msg.info && msg.info.error && (
-              <div className="mt-1 rounded bg-red-50 px-2 py-1 text-xs text-red-600">
-                {msg.info.error.data && "message" in msg.info.error.data
-                  ? String(msg.info.error.data.message)
-                  : msg.info.error.name}
+            {messageError && (
+              <div
+                role="alert"
+                className="mt-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"
+              >
+                <div className="font-semibold">Model request failed</div>
+                <div className="mt-0.5 break-words">{messageError}</div>
               </div>
             )}
           </div>
         )}
       </div>
+    </div>
+  );
+});
+
+const ChatErrorNotice = memo(function ChatErrorNotice({ message }: { message: string }) {
+  return (
+    <div
+      role="alert"
+      className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"
+    >
+      <div className="font-semibold">Message could not be sent</div>
+      <div className="mt-0.5 break-words">{message}</div>
     </div>
   );
 });
@@ -1382,9 +1403,10 @@ const BusyThinkingIndicator = memo(function BusyThinkingIndicator({
   const { activeSessionId } = useActiveSession();
   const resolvedSessionId = sessionId ?? activeSessionId;
   const isBusy = useIsBusy(resolvedSessionId);
+  const chatError = useChatError(resolvedSessionId);
   const lastId = messageIds.length > 0 ? messageIds[messageIds.length - 1] : null;
   const lastMsg = useMessage(lastId ?? "", sessionId);
-  if (!isBusy || !lastMsg || lastMsg.info.role !== "user") return null;
+  if (chatError || !isBusy || !lastMsg || lastMsg.info.role !== "user") return null;
   return <BloxBotThinking />;
 });
 
@@ -1393,6 +1415,13 @@ function ChatMessages({ sessionId }: { sessionId?: string | null }) {
   const { activeSessionId } = useActiveSession();
   const resolvedSessionId = sessionId ?? activeSessionId;
   const isBusy = useIsBusy(resolvedSessionId);
+  const chatError = useChatError(resolvedSessionId);
+  const lastMessageId = messageIds.length > 0 ? messageIds[messageIds.length - 1] : "";
+  const lastMessage = useMessage(lastMessageId, sessionId);
+  const lastMessageHasError =
+    lastMessage?.info.role === "assistant" &&
+    "error" in lastMessage.info &&
+    Boolean(lastMessage.info.error);
   const todos = useTodos(sessionId);
   const activeQuestion = useActiveQuestion(resolvedSessionId);
   const activePermission = useActivePermission(resolvedSessionId);
@@ -1460,7 +1489,7 @@ function ChatMessages({ sessionId }: { sessionId?: string | null }) {
     [replyPermission],
   );
 
-  if (messageIds.length === 0 && !isBusy) {
+  if (messageIds.length === 0 && !isBusy && !chatError) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center px-6">
         <ImageLightbox />
@@ -1505,6 +1534,7 @@ function ChatMessages({ sessionId }: { sessionId?: string | null }) {
           ))}
         </div>
         <div className="space-y-4">
+          {chatError && !lastMessageHasError && <ChatErrorNotice message={chatError} />}
           {todos.length > 0 && <TodoPanel todos={todos} />}
           {activeQuestion && (
             <QuestionPrompt

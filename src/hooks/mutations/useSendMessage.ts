@@ -1,5 +1,8 @@
+import type { SessionStatus } from "@opencode-ai/sdk/v2/client";
 import { usePostHog } from "@posthog/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { invoke } from "@tauri-apps/api/core";
+import { chatErrorMessage } from "@/lib/chatErrors";
 import { recordPromptFailure, recordPromptStart, recordPromptSuccess } from "@/lib/diagnostics";
 import { qk } from "@/lib/queryKeys";
 import { splitModelKey } from "@/lib/splitModelKey";
@@ -36,7 +39,7 @@ export function useSendMessage() {
 
       if (preferredStudioId) {
         messagePrefixes.push(
-          `[Studio Target: ${preferredStudioId}] Before running Roblox Studio tools, call set_active_studio with this exact ID and keep it active for this request.`,
+          `[Studio Target Already Active: ${preferredStudioId}] BloxBot has already activated this exact Studio for the request. Do not list Studios or call set_active_studio; use the active Studio directly.`,
         );
       }
 
@@ -111,7 +114,18 @@ export function useSendMessage() {
         providerID: providerID ?? null,
         modelID: modelID ?? null,
       });
+      queryClient.setQueryData(qk.chatError(activeSessionId), null);
       try {
+        if (preferredStudioId) {
+          try {
+            await invoke("set_active_roblox_studio", { studioId: preferredStudioId });
+          } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            throw new Error(
+              `Could not activate the selected Roblox Studio, so the message was not sent. Retry the selection or switch to Auto detect. ${detail}`,
+            );
+          }
+        }
         await client.session.promptAsync(opts as Parameters<typeof client.session.promptAsync>[0]);
         recordPromptSuccess();
         posthog.capture("message_sent", {
@@ -120,6 +134,11 @@ export function useSendMessage() {
         });
       } catch (error) {
         recordPromptFailure(error);
+        queryClient.setQueryData(qk.chatError(activeSessionId), chatErrorMessage(error));
+        queryClient.setQueryData<Record<string, SessionStatus>>(qk.statuses, (prev) => ({
+          ...prev,
+          [activeSessionId]: { type: "idle" } as SessionStatus,
+        }));
         throw error;
       }
     },

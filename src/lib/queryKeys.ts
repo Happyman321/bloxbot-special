@@ -2,6 +2,7 @@ export const qk = {
   sessions: ["sessions"] as const,
   session: (id: string) => ["sessions", id] as const,
   messages: (id: string) => ["sessions", id, "messages"] as const,
+  chatError: (id: string) => ["sessions", id, "chat-error"] as const,
   changes: (id: string) => ["sessions", id, "changes"] as const,
   todos: (id: string) => ["sessions", id, "todos"] as const,
   question: (id: string) => ["sessions", id, "question"] as const,

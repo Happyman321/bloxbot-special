@@ -227,6 +227,7 @@ describe("ChatInput", () => {
     });
 
     expect(client.session.promptAsync).toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalledWith("set_active_roblox_studio", expect.anything());
     const args = client.session.promptAsync.mock.calls[0][0];
     expect(args.parts[0].text).toBe("Build a game");
     expect(args.sessionID).toBe("s1");
@@ -443,7 +444,7 @@ describe("ChatInput", () => {
 
   it("detects studio IDs from the backend command and renders them in picker", async () => {
     const client = createClient();
-    vi.mocked(invoke).mockResolvedValueOnce([{ id: "12345", label: "Main Place" }]);
+    vi.mocked(invoke).mockResolvedValueOnce([{ id: "12345", name: "Main Place", active: true }]);
     const qc = createQueryClient();
 
     render(<TestChatInput client={client} queryClient={qc} />);
@@ -454,6 +455,7 @@ describe("ChatInput", () => {
       expect(invoke).toHaveBeenCalledWith("list_roblox_studios");
       expect(screen.getByText("Main Place")).toBeInTheDocument();
       expect(screen.getByText("12345")).toBeInTheDocument();
+      expect(screen.getByText("active")).toBeInTheDocument();
     });
   });
 
@@ -461,7 +463,7 @@ describe("ChatInput", () => {
     const client = createClient();
     vi.mocked(invoke)
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ id: "67890", label: "Recovered Place" }]);
+      .mockResolvedValueOnce([{ id: "67890", name: "Recovered Place", active: false }]);
     const qc = createQueryClient();
 
     render(<TestChatInput client={client} queryClient={qc} />);
@@ -487,11 +489,11 @@ describe("ChatInput", () => {
     fireEvent.click(await screen.findByTitle("Pick a Roblox Studio instance"));
 
     await waitFor(() => {
-      expect(screen.getByText("No active Studio sessions detected yet.")).toBeInTheDocument();
+      expect(screen.getByText("No open Roblox Studio sessions found.")).toBeInTheDocument();
     });
   });
 
-  it("falls back to the empty state when Studio detection fails", async () => {
+  it("keeps Auto available and shows the bridge error when Studio detection fails", async () => {
     const client = createClient();
     vi.mocked(invoke).mockRejectedValueOnce(new Error("Studio MCP unavailable"));
     const qc = createQueryClient();
@@ -501,27 +503,103 @@ describe("ChatInput", () => {
     fireEvent.click(await screen.findByTitle("Pick a Roblox Studio instance"));
 
     await waitFor(() => {
-      expect(screen.getByText("No active Studio sessions detected yet.")).toBeInTheDocument();
+      expect(screen.getAllByText("Auto detect")).toHaveLength(2);
+      expect(
+        screen.getByText(/Picker bridge unavailable: Studio MCP unavailable/),
+      ).toBeInTheDocument();
     });
   });
 
-  it("keeps manually remembered studio IDs in the picker", async () => {
+  it("activates an explicit Studio before updating the picker selection", async () => {
     const client = createClient();
-    vi.mocked(invoke).mockResolvedValueOnce([]);
+    vi.mocked(invoke)
+      .mockResolvedValueOnce([{ id: "studio-1", name: "Chosen Place", active: false }])
+      .mockResolvedValueOnce(undefined);
     const qc = createQueryClient();
 
-    render(
-      <TestChatInput
-        client={client}
-        queryClient={qc}
-        seedOverrides={{ config: { knownStudioIds: ["manual-studio"] } }}
-      />,
-    );
+    render(<TestChatInput client={client} queryClient={qc} />);
 
     fireEvent.click(await screen.findByTitle("Pick a Roblox Studio instance"));
+    fireEvent.click(await screen.findByText("Chosen Place"));
 
     await waitFor(() => {
-      expect(screen.getByText("Studio manual-studio")).toBeInTheDocument();
+      expect(invoke).toHaveBeenCalledWith("set_active_roblox_studio", {
+        studioId: "studio-1",
+      });
+      expect(screen.getByText("Chosen Place")).toBeInTheDocument();
+    });
+  });
+
+  it("reasserts an explicit Studio before sending without asking the agent to select it", async () => {
+    const client = createClient();
+    vi.mocked(invoke)
+      .mockResolvedValueOnce([{ id: "studio-1", name: "Chosen Place", active: false }])
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined);
+    const qc = createQueryClient();
+
+    render(<TestChatInput client={client} queryClient={qc} />);
+    fireEvent.click(await screen.findByTitle("Pick a Roblox Studio instance"));
+    fireEvent.click(await screen.findByText("Chosen Place"));
+    await waitFor(() => expect(screen.getByText("Chosen Place")).toBeInTheDocument());
+
+    const textarea = await screen.findByPlaceholderText("Describe what you want to build...");
+    fireEvent.change(textarea, { target: { value: "Inspect Workspace" } });
+    fireEvent.click(screen.getByTitle("Send"));
+
+    await waitFor(() => expect(client.session.promptAsync).toHaveBeenCalled());
+    expect(invoke).toHaveBeenLastCalledWith("set_active_roblox_studio", {
+      studioId: "studio-1",
+    });
+    const args = client.session.promptAsync.mock.calls[0][0];
+    expect(args.parts[0].text).toContain("[Studio Target Already Active: studio-1]");
+    expect(args.parts[0].text).toContain("Do not list Studios or call set_active_studio");
+  });
+
+  it("returns to Auto mode and best-effort reconnects the Studio MCP server", async () => {
+    const client = createClient();
+    vi.mocked(invoke)
+      .mockResolvedValueOnce([{ id: "studio-1", name: "Chosen Place", active: false }])
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([{ id: "studio-1", name: "Chosen Place", active: true }]);
+    const qc = createQueryClient();
+
+    render(<TestChatInput client={client} queryClient={qc} />);
+    fireEvent.click(await screen.findByTitle("Pick a Roblox Studio instance"));
+    fireEvent.click(await screen.findByText("Chosen Place"));
+    await waitFor(() => expect(screen.getByText("Chosen Place")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTitle("Pick a Roblox Studio instance"));
+    const autoOptions = await screen.findAllByText("Auto detect");
+    fireEvent.click(autoOptions[autoOptions.length - 1]);
+
+    await waitFor(() => {
+      expect(client.mcp.disconnect).toHaveBeenCalledWith({ name: "roblox-studio" });
+      expect(client.mcp.connect).toHaveBeenCalledWith({ name: "roblox-studio" });
+      expect(screen.getByTitle("Pick a Roblox Studio instance")).toHaveTextContent("Auto detect");
+    });
+  });
+
+  it("does not send when explicit Studio preflight fails", async () => {
+    const client = createClient();
+    vi.mocked(invoke)
+      .mockResolvedValueOnce([{ id: "studio-1", name: "Chosen Place", active: false }])
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("Studio disconnected"));
+    const qc = createQueryClient();
+
+    render(<TestChatInput client={client} queryClient={qc} />);
+    fireEvent.click(await screen.findByTitle("Pick a Roblox Studio instance"));
+    fireEvent.click(await screen.findByText("Chosen Place"));
+    await waitFor(() => expect(screen.getByText("Chosen Place")).toBeInTheDocument());
+
+    const textarea = await screen.findByPlaceholderText("Describe what you want to build...");
+    fireEvent.change(textarea, { target: { value: "Inspect Workspace" } });
+    fireEvent.click(screen.getByTitle("Send"));
+
+    await waitFor(() => {
+      expect(client.session.promptAsync).not.toHaveBeenCalled();
+      expect(qc.getQueryData(qk.chatError("s1"))).toContain("switch to Auto detect");
     });
   });
 });
