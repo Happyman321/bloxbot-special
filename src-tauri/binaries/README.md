@@ -16,6 +16,20 @@ Example for Apple Silicon Mac:
 
 Download from https://github.com/anomalyco/opencode/releases
 
+### BloxBot title-routing build
+
+BloxBot carries a small patch for its pinned OpenCode version so auto-generated
+chat titles use lightweight models without changing the visible chat request:
+
+- OpenAI titles use `gpt-5.6-luna-fast`.
+- xAI titles use `grok-4.5`.
+
+Run `powershell -ExecutionPolicy Bypass -File scripts/build-opencode-sidecar.ps1`
+from the repository root to rebuild the Windows sidecar (requires Bun 1.3.14 on
+`PATH`). The script checks that the matching versioned patch applies before
+replacing the local binary. When upgrading OpenCode, add and review a patch for
+the new version first.
+
 ## Node.js Runtime
 
 Node.js is bundled as a resource (not a sidecar) in `resources/nodejs/`.

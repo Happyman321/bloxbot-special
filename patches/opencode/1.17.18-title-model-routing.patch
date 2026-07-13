@@ -1,0 +1,59 @@
+diff --git a/packages/opencode/src/session/prompt.ts b/packages/opencode/src/session/prompt.ts
+index eb116f6..8f017b2 100644
+--- a/packages/opencode/src/session/prompt.ts
++++ b/packages/opencode/src/session/prompt.ts
+@@ -110,6 +110,11 @@ export interface Interface {
+ 
+ export class Service extends Context.Service<Service, Interface>()("@opencode/SessionPrompt") {}
+ 
++function titleModelOverride(providerID: ProviderV2.ID) {
++  if (providerID === "openai") return { providerID, modelID: "gpt-5.6-luna-fast" }
++  if (providerID === "xai") return { providerID, modelID: "grok-4.5" }
++}
++
+ const layer = Layer.effect(
+   Service,
+   Effect.gen(function* () {
+@@ -215,13 +220,28 @@ const layer = Layer.effect(
+ 
+       const ag = yield* agents.get("title")
+       if (!ag) return
+-      const mdl = ag.model
+-        ? yield* provider.getModel(ag.model.providerID, ag.model.modelID)
+-        : ((yield* provider.getSmallModel(input.providerID)) ??
+-          (yield* provider.getModel(input.providerID, input.modelID)))
++      const override = titleModelOverride(input.providerID)
++      const mdl = yield* (ag.model
++        ? provider.getModel(ag.model.providerID, ag.model.modelID)
++        : override
++          ? provider.getModel(override.providerID, override.modelID)
++          : Effect.gen(function* () {
++              return (
++                (yield* provider.getSmallModel(input.providerID)) ??
++                (yield* provider.getModel(input.providerID, input.modelID))
++              )
++            })).pipe(Effect.option)
++      if (Option.isNone(mdl)) {
++        yield* Effect.logWarning("skipping title generation because its title model is unavailable", {
++          "session.id": input.session.id,
++          providerID: input.providerID,
++          modelID: override?.modelID,
++        })
++        return
++      }
+       const msgs = onlySubtasks
+         ? [{ role: "user" as const, content: subtasks.map((p) => p.prompt).join("\n") }]
+-        : yield* MessageV2.toModelMessagesEffect(context, mdl)
++        : yield* MessageV2.toModelMessagesEffect(context, mdl.value)
+       const text = yield* llm
+         .stream({
+           agent: ag,
+@@ -229,7 +249,7 @@ const layer = Layer.effect(
+           system: [],
+           small: true,
+           tools: {},
+-          model: mdl,
++          model: mdl.value,
+           sessionID: input.session.id,
+           retries: 2,
+           messages: [{ role: "user", content: "Generate a title for this conversation:\n" }, ...msgs],
