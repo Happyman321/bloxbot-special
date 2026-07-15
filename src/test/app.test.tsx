@@ -365,6 +365,39 @@ describe("User journeys", () => {
       expect(screen.getByText(/I'll create a Roblox obby for you!/)).toBeInTheDocument();
     });
 
+    const response = screen.getByText(/I'll create a Roblox obby for you!/);
+    const chatScroller = response.closest(".overflow-y-auto");
+    expect(chatScroller).not.toBeNull();
+
+    const scrollIntoView = vi.spyOn(Element.prototype, "scrollIntoView");
+    scrollIntoView.mockClear();
+    fireEvent.wheel(chatScroller as Element, { deltaY: -100 });
+
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "message.part.updated",
+          properties: {
+            part: {
+              id: "part_1",
+              messageID: "msg_1",
+              sessionID: "s1",
+              type: "text",
+              text: 'I\'ll create a Roblox obby for you! More streaming text.\n\n```lua\nprint("hello")\n```',
+              time: { created: Date.now(), updated: Date.now() },
+            },
+          },
+        } as never,
+        activeRef,
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/More streaming text/)).toBeInTheDocument();
+    });
+    expect(scrollIntoView).not.toHaveBeenCalled();
+
     await act(async () => {
       fireEvent.click(screen.getByTitle("Copy code"));
     });

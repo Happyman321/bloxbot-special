@@ -287,8 +287,8 @@
 [data-sonner-toaster] [data-sonner-toast][data-styled="true"] {
   --toast-accent: oklch(0.553 0.013 58.071);
   font-family: "DM Sans", system-ui, -apple-system, sans-serif;
-  background: oklch(1 0 0);
-  border: 1px solid oklch(0.923 0.003 48.717);
+  background: var(--popover);
+  border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow:
     inset 3px 0 0 0 var(--toast-accent),
@@ -324,7 +324,7 @@
   font-size: 13.5px;
   line-height: 1.35;
   letter-spacing: -0.01em;
-  color: oklch(0.147 0.004 49.25);
+  color: var(--popover-foreground);
 }
 
 /* Toast description */
@@ -332,7 +332,7 @@
   font-weight: 400;
   font-size: 12.5px;
   line-height: 1.4;
-  color: oklch(0.553 0.013 58.071);
+  color: var(--muted-foreground);
   margin-top: 2px;
 }
 
@@ -343,15 +343,15 @@
   font-size: 12.5px;
   padding: 5px 12px;
   border-radius: 6px;
-  background: oklch(0.147 0.004 49.25);
-  color: oklch(0.985 0.001 106.424);
+  background: var(--primary);
+  color: var(--primary-foreground);
   border: none;
   cursor: pointer;
   transition: background 150ms ease, transform 100ms ease;
 }
 
 [data-sonner-toaster] [data-sonner-toast] [data-button]:hover {
-  background: oklch(0.28 0.006 49.25);
+  opacity: 0.9;
 }
 
 [data-sonner-toaster] [data-sonner-toast] [data-button]:active {
@@ -361,15 +361,15 @@
 /* Toast close button  - restyle Sonner's default circle */
 [data-sonner-toaster] [data-sonner-toast] [data-close-button] {
   border-radius: 6px !important;
-  border: 1px solid oklch(0.923 0.003 48.717) !important;
-  background: oklch(0.97 0.001 106.424) !important;
-  color: oklch(0.553 0.013 58.071) !important;
+  border: 1px solid var(--border) !important;
+  background: var(--secondary) !important;
+  color: var(--muted-foreground) !important;
   transition: opacity 150ms ease, background 120ms ease, color 120ms ease;
 }
 
 [data-sonner-toaster] [data-sonner-toast] [data-close-button]:hover {
-  background: oklch(0.923 0.003 48.717) !important;
-  color: oklch(0.147 0.004 49.25) !important;
+  background: var(--accent) !important;
+  color: var(--accent-foreground) !important;
 }
 
 /* Toast icon container */

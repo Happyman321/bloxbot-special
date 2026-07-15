@@ -14,6 +14,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type WheelEvent,
 } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -253,10 +254,10 @@ function BloxBotThinking({ label = "Thinking..." }: { label?: string }) {
 // ── Constants ───────────────────────────────────────────────────────────
 
 const TOOL_STATUS_COLORS: Record<string, string> = {
-  pending: "border-stone-200 bg-stone-50/50",
-  running: "border-amber-200 bg-amber-50/30",
-  completed: "border-stone-200 bg-white",
-  error: "border-red-200 bg-red-50/30",
+  pending: "border-border bg-muted/50",
+  running: "border-amber-200 bg-amber-50/30 dark:border-amber-800 dark:bg-amber-950/30",
+  completed: "border-border bg-card",
+  error: "border-red-200 bg-red-50/30 dark:border-red-900 dark:bg-red-950/30",
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -330,7 +331,7 @@ const BashToolView = memo(function BashToolView({
           <summary className="cursor-pointer text-[10px] text-muted-foreground hover:text-foreground">
             Output ({output.split("\n").length} lines)
           </summary>
-          <pre className="mt-1 max-h-48 overflow-auto rounded bg-stone-50 p-2 font-mono text-[10px] leading-tight text-stone-700">
+          <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted p-2 font-mono text-[10px] leading-tight text-foreground">
             {output.slice(0, 3000)}
           </pre>
         </details>
@@ -351,9 +352,9 @@ const DiffBlock = memo(function DiffBlock({ oldStr, newStr }: { oldStr: string; 
   return (
     <div className="mt-1.5 overflow-hidden rounded border text-[11px]">
       {oldLines.length > 0 && (
-        <div className="border-b bg-red-50 px-2.5 py-1 font-mono">
+        <div className="border-b bg-red-50 px-2.5 py-1 font-mono dark:bg-red-950/40">
           {oldLines.slice(0, 20).map((line, i) => (
-            <div key={i} className="text-red-700">
+            <div key={i} className="text-red-700 dark:text-red-300">
               <span className="mr-2 select-none text-red-400">-</span>
               {line}
             </div>
@@ -364,9 +365,9 @@ const DiffBlock = memo(function DiffBlock({ oldStr, newStr }: { oldStr: string; 
         </div>
       )}
       {newLines.length > 0 && (
-        <div className="bg-emerald-50 px-2.5 py-1 font-mono">
+        <div className="bg-emerald-50 px-2.5 py-1 font-mono dark:bg-emerald-950/40">
           {newLines.slice(0, 20).map((line, i) => (
-            <div key={i} className="text-emerald-700">
+            <div key={i} className="text-emerald-700 dark:text-emerald-300">
               <span className="mr-2 select-none text-emerald-400">+</span>
               {line}
             </div>
@@ -736,7 +737,7 @@ const DefaultToolView = memo(function DefaultToolView({
           <summary className="cursor-pointer text-[10px] text-muted-foreground hover:text-foreground">
             Output
           </summary>
-          <pre className="mt-1 max-h-32 overflow-auto rounded bg-stone-50 p-2 font-mono text-[10px] leading-tight text-stone-600">
+          <pre className="mt-1 max-h-32 overflow-auto rounded bg-muted p-2 font-mono text-[10px] leading-tight text-foreground">
             {typeof output === "string"
               ? output.slice(0, 2000)
               : JSON.stringify(output, null, 2).slice(0, 2000)}
@@ -800,7 +801,7 @@ const markdownComponents: Components = {
     );
   },
   hr() {
-    return <hr className="my-3 border-stone-200" />;
+    return <hr className="my-3 border-border" />;
   },
   code({ className, children }) {
     const isBlock = className?.includes("language-");
@@ -808,8 +809,8 @@ const markdownComponents: Components = {
       const lang = className?.replace("language-", "") ?? "";
       const codeText = markdownChildrenToText(children);
       return (
-        <div className="mb-2 overflow-hidden rounded-md border border-stone-200 last:mb-0">
-          <div className="flex items-center justify-between gap-2 border-b border-stone-200 bg-stone-100 px-2.5 py-1">
+        <div className="mb-2 overflow-hidden rounded-md border border-border last:mb-0">
+          <div className="flex items-center justify-between gap-2 border-b border-border bg-muted px-2.5 py-1">
             <span className="min-w-0 truncate text-[10px] font-medium text-muted-foreground">
               {lang || "code"}
             </span>
@@ -818,7 +819,7 @@ const markdownComponents: Components = {
               title="Copy code"
               onClick={() => void copyCodeBlock(codeText)}
               className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded
-                text-muted-foreground transition-colors hover:bg-stone-200 hover:text-foreground"
+                text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
               <svg
                 aria-hidden="true"
@@ -844,7 +845,7 @@ const markdownComponents: Components = {
       );
     }
     return (
-      <code className="rounded bg-stone-100 px-1 py-0.5 font-mono text-[11.5px] text-stone-800">
+      <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11.5px] text-foreground">
         {children}
       </code>
     );
@@ -860,13 +861,13 @@ const markdownComponents: Components = {
     );
   },
   thead({ children }) {
-    return <thead className="border-b border-stone-200 bg-stone-50">{children}</thead>;
+    return <thead className="border-b border-border bg-muted">{children}</thead>;
   },
   th({ children }) {
     return <th className="px-2 py-1 text-left font-semibold text-foreground">{children}</th>;
   },
   td({ children }) {
-    return <td className="border-t border-stone-100 px-2 py-1 text-foreground">{children}</td>;
+    return <td className="border-t border-border px-2 py-1 text-foreground">{children}</td>;
   },
 };
 
@@ -967,7 +968,7 @@ const ToolPartView = memo(function ToolPartView({
         )}
       {renderToolContent()}
       {errorMsg && (
-        <div className="mt-1.5 rounded bg-red-50 px-2 py-1 text-[11px] text-red-600">
+        <div className="mt-1.5 rounded bg-red-50 px-2 py-1 text-[11px] text-red-700 dark:bg-red-950/40 dark:text-red-300">
           {errorMsg}
         </div>
       )}
@@ -976,7 +977,7 @@ const ToolPartView = memo(function ToolPartView({
 });
 
 const StepPartView = memo(function StepPartView() {
-  return <div className="my-2 border-t border-stone-200" />;
+  return <div className="my-2 border-t border-border" />;
 });
 
 const StepFinishPartView = memo(function StepFinishPartView({
@@ -1002,7 +1003,7 @@ const RetryPartView = memo(function RetryPartView({
   part: Extract<Part, { type: "retry" }>;
 }) {
   return (
-    <div className="my-1 flex items-center gap-1.5 rounded border border-amber-200 bg-amber-50/30 px-2.5 py-1.5 text-[11px] text-amber-700">
+    <div className="my-1 flex items-center gap-1.5 rounded border border-amber-200 bg-amber-50/30 px-2.5 py-1.5 text-[11px] text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
       <svg
         width="10"
         height="10"
@@ -1085,7 +1086,7 @@ const TodoPanel = memo(function TodoPanel({ todos }: { todos: Todo[] }) {
           {completed}/{total}
         </span>
       </div>
-      <div className="h-1 overflow-hidden rounded-full bg-stone-100">
+      <div className="h-1 overflow-hidden rounded-full bg-muted">
         <div
           className="h-full rounded-full bg-emerald-500 transition-all duration-300"
           style={{ width: `${total > 0 ? (completed / total) * 100 : 0}%` }}
@@ -1367,7 +1368,7 @@ const MessageBubble = memo(function MessageBubble({
             {messageError && (
               <div
                 role="alert"
-                className="mt-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"
+                className="mt-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
               >
                 <div className="font-semibold">Model request failed</div>
                 <div className="mt-0.5 break-words">{messageError}</div>
@@ -1384,7 +1385,7 @@ const ChatErrorNotice = memo(function ChatErrorNotice({ message }: { message: st
   return (
     <div
       role="alert"
-      className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"
+      className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
     >
       <div className="font-semibold">Message could not be sent</div>
       <div className="mt-0.5 break-words">{message}</div>
@@ -1432,6 +1433,7 @@ function ChatMessages({ sessionId }: { sessionId?: string | null }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
+  const lastScrollTop = useRef(0);
 
   const virtualizer = useVirtualizer({
     count: messageIds.length,
@@ -1444,8 +1446,26 @@ function ChatMessages({ sessionId }: { sessionId?: string | null }) {
     const el = containerRef.current;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    shouldAutoScroll.current = distanceFromBottom < 80;
+    const scrolledUp = el.scrollTop < lastScrollTop.current - 1;
+
+    if (scrolledUp) {
+      shouldAutoScroll.current = false;
+    } else if (distanceFromBottom <= 16) {
+      shouldAutoScroll.current = true;
+    }
+
+    lastScrollTop.current = el.scrollTop;
   }, []);
+
+  const handleWheel = useCallback((event: WheelEvent<HTMLDivElement>) => {
+    if (event.deltaY < 0) shouldAutoScroll.current = false;
+  }, []);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset when switching chats
+  useEffect(() => {
+    shouldAutoScroll.current = true;
+    lastScrollTop.current = containerRef.current?.scrollTop ?? 0;
+  }, [resolvedSessionId]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -1508,7 +1528,12 @@ function ChatMessages({ sessionId }: { sessionId?: string | null }) {
   const virtualItems = virtualizer.getVirtualItems();
 
   return (
-    <div ref={containerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto">
+    <div
+      ref={containerRef}
+      onScroll={handleScroll}
+      onWheel={handleWheel}
+      className="flex-1 overflow-y-auto"
+    >
       <ImageLightbox />
       <div className="mx-auto max-w-2xl px-4 py-4">
         <div

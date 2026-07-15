@@ -11,10 +11,10 @@ interface DiffViewerProps {
 function KindPill({ kind }: { kind: ChangeKind }) {
   const palette =
     kind === "add"
-      ? "bg-emerald-100 text-emerald-700"
+      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
       : kind === "delete"
-        ? "bg-red-100 text-red-700"
-        : "bg-blue-100 text-blue-700";
+        ? "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300"
+        : "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300";
   const label = kind === "add" ? "Added" : kind === "delete" ? "Removed" : "Changed";
 
   return (
@@ -63,9 +63,9 @@ const ScriptDiffView = memo(function ScriptDiffView({ change }: { change: Sessio
           {change.diffLines.map((line, idx) => {
             const rowClass =
               line.type === "add"
-                ? "bg-emerald-50/70"
+                ? "bg-emerald-50/70 dark:bg-emerald-950/30"
                 : line.type === "remove"
-                  ? "bg-red-50/70"
+                  ? "bg-red-50/70 dark:bg-red-950/30"
                   : "bg-transparent";
             const marker = line.type === "add" ? "+" : line.type === "remove" ? "-" : " ";
 
@@ -171,7 +171,7 @@ function DiffViewer({ changes, open, onClose }: DiffViewerProps) {
                       onClick={() => setSelectedKey(change.key)}
                       className={`mb-1 w-full rounded-md border px-2 py-1.5 text-left transition-colors ${
                         active
-                          ? "border-blue-300 bg-blue-50"
+                          ? "border-blue-300 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/40"
                           : "border-transparent hover:border-stone-200 hover:bg-accent"
                       }`}
                     >

@@ -892,7 +892,7 @@ function ImageMode() {
           >
             {activeProject?.title ?? "OpenRouter image generation"}
           </button>
-          <div className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] text-blue-700">
+          <div className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
             OpenRouter credits are used for generations
           </div>
         </div>
@@ -1047,7 +1047,7 @@ function ImageMode() {
                         <div
                           className={`mt-3 rounded-md border px-2 py-1.5 text-xs ${
                             turn.status === "failed"
-                              ? "border-red-200 bg-red-50 text-red-700"
+                              ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
                               : "bg-background/70 text-muted-foreground"
                           }`}
                         >

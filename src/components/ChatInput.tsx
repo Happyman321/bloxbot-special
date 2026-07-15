@@ -748,7 +748,7 @@ function ChatInput() {
   function statusBadge(status?: string) {
     if (status === "beta")
       return (
-        <span className="shrink-0 rounded bg-amber-100 px-1 text-[9px] font-medium text-amber-700">
+        <span className="shrink-0 rounded bg-amber-100 px-1 text-[9px] font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
           beta
         </span>
       );
@@ -760,7 +760,7 @@ function ChatInput() {
       );
     if (status === "deprecated")
       return (
-        <span className="shrink-0 rounded bg-stone-100 px-1 text-[9px] font-medium text-stone-500">
+        <span className="shrink-0 rounded bg-muted px-1 text-[9px] font-medium text-muted-foreground">
           deprecated
         </span>
       );
@@ -985,7 +985,7 @@ function ChatInput() {
                   <span className="flex w-full items-center gap-1 truncate">
                     <span className="truncate">{studio.name}</span>
                     {studio.active && (
-                      <span className="shrink-0 rounded bg-emerald-100 px-1 text-[9px] font-medium text-emerald-700">
+                      <span className="shrink-0 rounded bg-emerald-100 px-1 text-[9px] font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
                         active
                       </span>
                     )}
@@ -1063,7 +1063,7 @@ function ChatInput() {
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
-        className={`rounded-xl border bg-background transition-shadow focus-within:ring-2 ring-ring/20 ${isDragging ? "ring-2 ring-blue-400 border-blue-300 bg-blue-50/30" : ""}`}
+        className={`rounded-xl border bg-background transition-shadow focus-within:ring-2 ring-ring/20 ${isDragging ? "border-blue-300 bg-blue-50/30 ring-2 ring-blue-400 dark:border-blue-800 dark:bg-blue-950/30" : ""}`}
       >
         {attachments.length > 0 && (
           <div className="flex gap-2 overflow-x-auto px-3 pt-2 pb-1">
