@@ -27,6 +27,7 @@ pub struct StudioInstance {
 const OC_PORT_START: u16 = 59200;
 const PORT_RANGE: u16 = 10;
 const OPENCODE_PLUGINS: &[&str] = &["opencode-gemini-auth@latest"];
+const ROBLOX_MCP_REQUEST_TIMEOUT_MS: u64 = 10 * 60 * 1000;
 
 /// All servers bind to IPv4 loopback.
 pub const LOOPBACK: &str = "127.0.0.1";
@@ -103,6 +104,28 @@ fn studio_mcp_command() -> Vec<String> {
     {
         vec!["studio-mcp".to_string()]
     }
+}
+
+fn mcp_servers_config(
+    studio_mcp_cmd: Vec<String>,
+    vscode_mcp_cmd: Vec<String>,
+    vscode_bridge: serde_json::Value,
+) -> serde_json::Value {
+    serde_json::json!({
+        "roblox-studio": {
+            "type": "local",
+            "command": studio_mcp_cmd,
+            "enabled": true,
+            "timeout": ROBLOX_MCP_REQUEST_TIMEOUT_MS
+        },
+        "bloxbot-vscode": {
+            "type": "local",
+            "command": vscode_mcp_cmd,
+            "environment": vscode_bridge.clone(),
+            "env": vscode_bridge,
+            "enabled": true
+        }
+    })
 }
 
 fn vscode_mcp_command(nodejs_bin_dir: &std::path::Path) -> Result<Vec<String>, String> {
@@ -292,20 +315,7 @@ async fn do_start(
 
     let mcp_config = serde_json::json!({
         "plugin": OPENCODE_PLUGINS,
-        "mcp": {
-            "roblox-studio": {
-                "type": "local",
-                "command": studio_mcp_cmd,
-                "enabled": true
-            },
-            "bloxbot-vscode": {
-                "type": "local",
-                "command": vscode_mcp_cmd,
-                "environment": vscode_bridge.clone(),
-                "env": vscode_bridge,
-                "enabled": true
-            }
-        },
+        "mcp": mcp_servers_config(studio_mcp_cmd, vscode_mcp_cmd, vscode_bridge),
         "default_agent": "studio",
         "agent": {
             "build": {
@@ -336,6 +346,9 @@ async fn do_start(
                     "## Tool Error Recovery\n",
                     "If a Roblox MCP tool returns a schema, type, or argument-shape error, correct the MCP tool call and retry once with valid arguments. ",
                     "If the correct call shape is unclear, use another Roblox MCP tool or ask the user for the missing detail. ",
+                    "If a Roblox MCP tool returns `-32001 Request timed out`, treat it as an operation timeout, not proof that Studio is closed or disconnected. ",
+                    "Call `get_studio_state` once to check the connection. If Studio responds, retry once with a narrower task or complete focused verification with direct Studio tools; do not repeat the same broad timed-out call unchanged. ",
+                    "Only ask the user to verify or reconnect Studio when `get_studio_state` also fails. ",
                     "Do not pivot to local filesystem, package-source, shell, PowerShell, or BloxBot/OpenCode internals to debug Roblox MCP tool errors.\n\n",
 
                     "## Workflow\n",
@@ -1130,6 +1143,42 @@ mod tests {
         assert!(cmd[0].contains("StudioMCP"));
         #[cfg(target_os = "windows")]
         assert_eq!(cmd[0], "cmd.exe");
+    }
+
+    #[test]
+    fn studio_mcp_config_uses_ten_minute_request_timeout() {
+        let servers = mcp_servers_config(
+            vec!["studio-mcp".to_string()],
+            vec!["node".to_string(), "server.js".to_string()],
+            serde_json::json!({ "BLOXBOT_VSCODE_BRIDGE_TOKEN": "test-token" }),
+        );
+        let studio = &servers["roblox-studio"];
+
+        assert_eq!(
+            studio["timeout"].as_u64(),
+            Some(ROBLOX_MCP_REQUEST_TIMEOUT_MS)
+        );
+        assert_eq!(studio["command"], serde_json::json!(["studio-mcp"]));
+        assert_eq!(studio["type"], serde_json::json!("local"));
+        assert_eq!(studio["enabled"], serde_json::json!(true));
+    }
+
+    #[test]
+    fn studio_timeout_does_not_apply_to_other_mcp_servers() {
+        let bridge = serde_json::json!({
+            "BLOXBOT_VSCODE_BRIDGE_URL": "http://127.0.0.1:12345",
+            "BLOXBOT_VSCODE_BRIDGE_TOKEN": "test-token"
+        });
+        let servers = mcp_servers_config(
+            vec!["studio-mcp".to_string()],
+            vec!["node".to_string(), "server.js".to_string()],
+            bridge.clone(),
+        );
+        let vscode = &servers["bloxbot-vscode"];
+
+        assert!(vscode.get("timeout").is_none());
+        assert_eq!(vscode["environment"], bridge);
+        assert_eq!(vscode["env"], bridge);
     }
 
     #[test]
