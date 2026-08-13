@@ -6,6 +6,7 @@ import { useSendMessage } from "@/hooks/mutations/useSendMessage";
 import { useAgents } from "@/hooks/useAgents";
 import { useAllModels, useConnectedProviders } from "@/hooks/useProviders";
 import { useIsBusy } from "@/hooks/useSessionStatuses";
+import { type SkillSummary, useBloxbotSkills } from "@/lib/skills";
 import { splitModelKey } from "@/lib/splitModelKey";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
@@ -271,6 +272,7 @@ function ChatInput() {
   const allModels = useAllModels();
   const connectedProviders = useConnectedProviders();
   const agents = useAgents();
+  const { data: skills = [] } = useBloxbotSkills();
   const { activeSessionId } = useActiveSession();
   const isBusy = useIsBusy(activeSessionId);
   const {
@@ -303,6 +305,8 @@ function ChatInput() {
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showAgentPicker, setShowAgentPicker] = useState(false);
   const [showStudioPicker, setShowStudioPicker] = useState(false);
+  const [showSkillPicker, setShowSkillPicker] = useState(false);
+  const [selectedSkill, setSelectedSkill] = useState<SkillSummary | null>(null);
   const [loadingStudios, setLoadingStudios] = useState(false);
   const [reconnectingStudio, setReconnectingStudio] = useState(false);
   const [selectingStudioId, setSelectingStudioId] = useState<string | null>(null);
@@ -318,6 +322,7 @@ function ChatInput() {
   const modelPickerRef = useRef<HTMLDivElement>(null);
   const agentPickerRef = useRef<HTMLDivElement>(null);
   const studioPickerRef = useRef<HTMLDivElement>(null);
+  const skillPickerRef = useRef<HTMLDivElement>(null);
   const dragCounterRef = useRef(0);
   const rejectTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -536,12 +541,23 @@ function ChatInput() {
       if (studioPickerRef.current && !studioPickerRef.current.contains(e.target as Node)) {
         setShowStudioPicker(false);
       }
+      if (skillPickerRef.current && !skillPickerRef.current.contains(e.target as Node)) {
+        setShowSkillPicker(false);
+      }
     }
-    if (showModelPicker || showAgentPicker || showStudioPicker) {
+    if (showModelPicker || showAgentPicker || showStudioPicker || showSkillPicker) {
       document.addEventListener("mousedown", handleClick);
       return () => document.removeEventListener("mousedown", handleClick);
     }
-  }, [showModelPicker, showAgentPicker, showStudioPicker]);
+  }, [showModelPicker, showAgentPicker, showStudioPicker, showSkillPicker]);
+
+  const enabledSkills = useMemo(() => skills.filter((skill) => skill.enabled), [skills]);
+
+  useEffect(() => {
+    if (selectedSkill && !enabledSkills.some((skill) => skill.id === selectedSkill.id)) {
+      setSelectedSkill(null);
+    }
+  }, [enabledSkills, selectedSkill]);
 
   const modelsByProvider = useMemo(() => {
     const POPULAR = [
@@ -714,9 +730,10 @@ function ChatInput() {
       attachments.length > 0
         ? attachments.map((a) => ({ mime: a.mime, url: a.dataUrl, filename: a.filename }))
         : undefined;
-    sendMessage.mutate({ text: trimmed || " ", images });
+    sendMessage.mutate({ text: trimmed || " ", images, skill: selectedSkill ?? undefined });
     setText("");
     setAttachments([]);
+    setSelectedSkill(null);
     if (textareaRef.current) textareaRef.current.style.height = "auto";
   }
 
@@ -804,6 +821,8 @@ function ChatInput() {
             onClick={() => {
               setShowModelPicker(!showModelPicker);
               setShowAgentPicker(false);
+              setShowStudioPicker(false);
+              setShowSkillPicker(false);
               if (showModelPicker) {
                 setModelSearch("");
               }
@@ -895,6 +914,8 @@ function ChatInput() {
               onClick={() => {
                 setShowAgentPicker(!showAgentPicker);
                 setShowModelPicker(false);
+                setShowStudioPicker(false);
+                setShowSkillPicker(false);
               }}
               className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
@@ -940,12 +961,66 @@ function ChatInput() {
           </div>
         )}
 
+        <div className="relative" ref={skillPickerRef}>
+          <button
+            type="button"
+            onClick={() => {
+              setShowSkillPicker(!showSkillPicker);
+              setShowModelPicker(false);
+              setShowAgentPicker(false);
+              setShowStudioPicker(false);
+            }}
+            className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            title="Choose a skill for this message"
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+            {selectedSkill ? selectedSkill.id : "Skills"}
+          </button>
+          {showSkillPicker && (
+            <div className="absolute bottom-full left-0 z-50 mb-1 max-h-64 w-72 overflow-y-auto rounded-lg border bg-popover p-1 shadow-lg">
+              <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Load for this message
+              </div>
+              {enabledSkills.map((skill) => (
+                <button
+                  type="button"
+                  key={skill.id}
+                  onClick={() => {
+                    setSelectedSkill(skill);
+                    setShowSkillPicker(false);
+                  }}
+                  className={`flex w-full flex-col rounded-md px-2 py-1.5 text-left transition-colors ${selectedSkill?.id === skill.id ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
+                >
+                  <span className="flex w-full items-center gap-1.5 text-xs font-medium">
+                    <span className="truncate">{skill.id}</span>
+                    <span className="shrink-0 rounded bg-muted px-1 text-[9px] font-normal">
+                      {skill.source === "builtin" ? "Built-in" : "Custom"}
+                    </span>
+                  </span>
+                  <span className="mt-0.5 line-clamp-2 text-[10px] leading-relaxed text-muted-foreground">
+                    {skill.description}
+                  </span>
+                </button>
+              ))}
+              {enabledSkills.length === 0 && (
+                <div className="px-2 py-3 text-center text-xs text-muted-foreground">
+                  No enabled skills
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         <div className="relative" ref={studioPickerRef}>
           <button
             onClick={() => {
               setShowStudioPicker(!showStudioPicker);
               setShowModelPicker(false);
               setShowAgentPicker(false);
+              setShowSkillPicker(false);
             }}
             disabled={isBusy}
             className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
@@ -1065,6 +1140,22 @@ function ChatInput() {
         onDrop={onDrop}
         className={`rounded-xl border bg-background transition-shadow focus-within:ring-2 ring-ring/20 ${isDragging ? "border-blue-300 bg-blue-50/30 ring-2 ring-blue-400 dark:border-blue-800 dark:bg-blue-950/30" : ""}`}
       >
+        {selectedSkill && (
+          <div className="flex px-3 pt-2">
+            <span className="inline-flex max-w-full items-center gap-1.5 rounded-full border bg-accent px-2 py-1 text-[10px]">
+              <span className="text-muted-foreground">Skill</span>
+              <span className="truncate font-mono font-medium">{selectedSkill.id}</span>
+              <button
+                type="button"
+                onClick={() => setSelectedSkill(null)}
+                className="ml-0.5 text-muted-foreground hover:text-foreground"
+                aria-label={`Remove ${selectedSkill.id} skill`}
+              >
+                ×
+              </button>
+            </span>
+          </div>
+        )}
         {attachments.length > 0 && (
           <div className="flex gap-2 overflow-x-auto px-3 pt-2 pb-1">
             {attachments.map((a, idx) => (

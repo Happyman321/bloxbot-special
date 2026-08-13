@@ -1,6 +1,7 @@
 mod logging;
 mod opencode;
 mod paths;
+mod skills;
 mod vscode_bridge;
 
 use opencode::SharedOpenCodeState;
@@ -30,6 +31,12 @@ pub fn run() {
             opencode::get_opencode_info,
             opencode::list_roblox_studios,
             opencode::set_active_roblox_studio,
+            skills::list_bloxbot_skills,
+            skills::get_bloxbot_skill,
+            skills::save_bloxbot_skill,
+            skills::duplicate_bloxbot_skill,
+            skills::set_bloxbot_skill_enabled,
+            skills::delete_bloxbot_skill,
             vscode_bridge::get_vscode_bridge_info
         ])
         .setup(|app| {

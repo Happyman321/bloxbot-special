@@ -28,6 +28,8 @@ const OC_PORT_START: u16 = 59200;
 const PORT_RANGE: u16 = 10;
 const OPENCODE_PLUGINS: &[&str] = &["opencode-gemini-auth@latest"];
 const ROBLOX_MCP_REQUEST_TIMEOUT_MS: u64 = 10 * 60 * 1000;
+const DISABLE_EXTERNAL_SKILLS_ENV: &str = "OPENCODE_DISABLE_EXTERNAL_SKILLS";
+const DISABLE_CLAUDE_SKILLS_ENV: &str = "OPENCODE_DISABLE_CLAUDE_CODE_SKILLS";
 
 /// All servers bind to IPv4 loopback.
 pub const LOOPBACK: &str = "127.0.0.1";
@@ -126,6 +128,48 @@ fn mcp_servers_config(
             "enabled": true
         }
     })
+}
+
+fn skills_config(skill_paths: &[std::path::PathBuf]) -> serde_json::Value {
+    serde_json::json!({
+        "paths": skill_paths,
+        "urls": []
+    })
+}
+
+fn apply_skill_permissions(
+    config: &mut serde_json::Value,
+    skill_permissions: &serde_json::Map<String, serde_json::Value>,
+) {
+    if let Some(config) = config.as_object_mut() {
+        let permission = config
+            .entry("permission")
+            .or_insert_with(|| serde_json::json!({}));
+        if let Some(permission) = permission.as_object_mut() {
+            permission.insert(
+                "skill".to_string(),
+                serde_json::Value::Object(skill_permissions.clone()),
+            );
+        }
+    }
+    if let Some(agents) = config
+        .get_mut("agent")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        for agent in agents.values_mut() {
+            if let Some(agent) = agent.as_object_mut() {
+                let permission = agent
+                    .entry("permission")
+                    .or_insert_with(|| serde_json::json!({}));
+                if let Some(permission) = permission.as_object_mut() {
+                    permission.insert(
+                        "skill".to_string(),
+                        serde_json::Value::Object(skill_permissions.clone()),
+                    );
+                }
+            }
+        }
+    }
 }
 
 fn vscode_mcp_command(nodejs_bin_dir: &std::path::Path) -> Result<Vec<String>, String> {
@@ -312,9 +356,20 @@ async fn do_start(
             "BLOXBOT_VSCODE_BRIDGE_TOKEN": bridge.token.clone(),
         })
     };
+    let workspace = crate::paths::workspace_dir()?;
+    let bundled_skills = crate::paths::bundled_skills_dir()?
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve bundled skills directory: {e}"))?;
+    let skill_permissions = crate::skills::disabled_skill_permission_rules()?;
+    let user_skills = workspace
+        .join(".agents")
+        .join("skills")
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve user skills directory: {e}"))?;
 
-    let mcp_config = serde_json::json!({
+    let mut mcp_config = serde_json::json!({
         "plugin": OPENCODE_PLUGINS,
+        "skills": skills_config(&[bundled_skills, user_skills]),
         "mcp": mcp_servers_config(studio_mcp_cmd, vscode_mcp_cmd, vscode_bridge),
         "default_agent": "studio",
         "agent": {
@@ -342,6 +397,10 @@ async fn do_start(
                     "The user's Roblox project lives in the connected Roblox Studio DataModel, not in BloxBot's local app directory, OpenCode internals, package sources, or the user's PC filesystem. ",
                     "When working on a Roblox game, do not use `dir`, PowerShell, shell commands, local file reads, local grep/glob/list, package-source inspection, or BloxBot/OpenCode files to understand or debug the game. ",
                     "Use Roblox Studio MCP tools for project exploration, script reads/searches, edits, verification, and debugging.\n\n",
+
+                    "## Skills\n",
+                    "BloxBot-native skills use OpenCode's native skill loader and contain focused workflows that should only enter context when useful. If a message begins with `[BloxBot Skill Selected: <id>]`, load that exact skill with the native `skill` tool before doing any work. Otherwise, load a BloxBot skill when its description clearly matches the request; do not load unrelated skills. ",
+                    "Roblox-authored and creator-authored skills are separate: they remain managed by Roblox Studio and are available through Studio MCP's `skill` tool. Use the appropriate source and never claim a skill was loaded unless its tool call succeeded.\n\n",
 
                     "## Tool Error Recovery\n",
                     "If a Roblox MCP tool returns a schema, type, or argument-shape error, correct the MCP tool call and retry once with valid arguments. ",
@@ -389,27 +448,8 @@ async fn do_start(
                     "- **Anything the focused tools don't cover**\n\n",
                     "Keep `execute_luau` code minimal and explicit. Print or return confirmation data. Prefer idempotent operations.\n\n",
 
-                    "### Playtesting & Debugging\n",
-                    "- `screen_capture()` - Capture the current Studio viewport during playtests when visual state matters.\n",
-                    "- `playtest_subagent(objective)` - Run heavier gameplay scenario testing. Use for risky, multi-system, visual, physics, networking, economy, combat, save-data, or regression-prone changes.\n",
-                    "- `start_stop_play(\"start\")` / `start_stop_play(\"stop\")` — Start/stop playtesting.\n",
-                    "- `console_output()` — Retrieve console logs. Check immediately after starting a playtest or triggering a feature.\n",
-                    "- **Always stop playtesting before making structural edits** to ensure changes persist in the Edit session.\n\n",
-                    "Debug loop:\n",
-                    "1. Add strategic print/warn statements to trace execution\n",
-                    "2. Start playtest\n",
-                    "3. Trigger the behavior — use input simulation or ask the user\n",
-                    "4. `console_output()` to read logs + `execute_luau` to probe live state\n",
-                    "5. Stop playtest\n",
-                    "6. Apply minimal fix\n",
-                    "7. Repeat until resolved\n\n",
-
-                    "### Input Simulation\n",
-                    "Use during active playtests to validate gameplay and UI:\n",
-                    "- `character_navigation(target)` — Move player to a position or instance path\n",
-                    "- `keyboard_input(action, key)` — Key presses, holds, text input\n",
-                    "- `mouse_input(action, position?)` — Clicks, movement, scrolling\n\n",
-
+                    "### Playtesting\n",
+                    "Use `start_stop_play`, `console_output`, input simulation, `screen_capture`, and `playtest_subagent` when runtime evidence is proportionate to the change. Load `bloxbot-playtest-debugging` for the complete debugging and verification workflow. Always stop playtesting before structural edits.\n\n",
                     "### Restricted Asset Generation\n",
                     "- `generate_mesh(prompt)` - Generate a textured 3D mesh only when the user directly asks for generated mesh/model assets.\n",
                     "- `generate_material(prompt)` - Generate a custom material or texture only when the user directly asks for generated materials/textures.\n",
@@ -421,13 +461,6 @@ async fn do_start(
                     "- `list_roblox_studios()` — List connected Studio instances\n",
                     "- `set_active_studio(studio_id)` — Target a specific instance before making changes\n",
                     "- If BloxBot says a Studio target is already active, use it directly without listing Studios or selecting it again.\n\n",
-
-                    "## MicroProfiler / LibMP\n",
-                    "Use `execute_luau` to inspect MicroProfiler data through LibMP when the user asks about frame spikes, FPS drops, CPU/GPU bottlenecks, memory allocation, or profiling. ",
-                    "For Studio MCP and Assistant-style workflows, use `require(\"@rbx/LibMP\")`. ",
-                    "Prefer paused or snapshotted MicroProfiler captures for deeper analysis so the dataset stays stable while you inspect frames, threads, timers, groups, and counters. ",
-                    "Do not force a switch to Play mode if the user already has static MicroProfiler data captured. ",
-                    "When mentioning profiler frames, report both the regular frame ID and absolute frame ID so the user can find the frame programmatically and in the UI.\n\n",
 
                     "## Proportional Verification\n",
                     "Always verify changes, but scale verification to the risk and blast radius. ",
@@ -601,12 +634,11 @@ async fn do_start(
             }
         }
     });
+    apply_skill_permissions(&mut mcp_config, &skill_permissions);
     let config_content = serde_json::to_string_pretty(&mcp_config)
         .map_err(|e| format!("Failed to serialize OpenCode config: {e}"))?;
 
     log::debug!("Config: {config_content}");
-
-    let workspace = crate::paths::workspace_dir()?;
 
     // Create isolated XDG directories under ~/BloxBot/.opencode/
     let opencode_home = workspace.join(".opencode");
@@ -676,6 +708,8 @@ async fn do_start(
         .env("XDG_CONFIG_HOME", &xdg_config)
         .env("XDG_CACHE_HOME", &xdg_cache)
         .env("XDG_STATE_HOME", &xdg_state)
+        .env(DISABLE_EXTERNAL_SKILLS_ENV, "1")
+        .env(DISABLE_CLAUDE_SKILLS_ENV, "1")
         .env("PATH", &minimal_path)
         .spawn()
         .map_err(|e| {
@@ -1144,6 +1178,54 @@ mod tests {
         assert!(cmd[0].contains("StudioMCP"));
         #[cfg(target_os = "windows")]
         assert_eq!(cmd[0], "cmd.exe");
+    }
+
+    #[test]
+    fn bundled_skill_path_is_registered_without_remote_catalogs() {
+        let bundled = std::path::PathBuf::from("C:/BloxBot/resources/skills");
+        let user = std::path::PathBuf::from("C:/Users/test/BloxBot/.agents/skills");
+        let config = skills_config(&[bundled.clone(), user.clone()]);
+        assert_eq!(config["paths"], serde_json::json!([bundled, user]));
+        assert_eq!(config["urls"], serde_json::json!([]));
+        assert_eq!(
+            DISABLE_EXTERNAL_SKILLS_ENV,
+            "OPENCODE_DISABLE_EXTERNAL_SKILLS"
+        );
+        assert_eq!(
+            DISABLE_CLAUDE_SKILLS_ENV,
+            "OPENCODE_DISABLE_CLAUDE_CODE_SKILLS"
+        );
+    }
+
+    #[test]
+    fn disabled_skill_rules_are_applied_to_every_agent() {
+        let mut config = serde_json::json!({
+            "agent": {
+                "studio": { "permission": { "read": "deny" } },
+                "worker": { "mode": "subagent" },
+            }
+        });
+        let rules = serde_json::json!({
+            "*": "allow",
+            "disabled-skill": "deny"
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        apply_skill_permissions(&mut config, &rules);
+        assert_eq!(
+            config["permission"]["skill"],
+            serde_json::Value::Object(rules.clone())
+        );
+        assert_eq!(
+            config["agent"]["studio"]["permission"]["skill"],
+            serde_json::Value::Object(rules.clone())
+        );
+        assert_eq!(
+            config["agent"]["worker"]["permission"]["skill"],
+            serde_json::Value::Object(rules)
+        );
+        assert_eq!(config["agent"]["studio"]["permission"]["read"], "deny");
     }
 
     #[test]

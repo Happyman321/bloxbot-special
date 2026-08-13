@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { chatErrorMessage } from "@/lib/chatErrors";
 import { recordPromptFailure, recordPromptStart, recordPromptSuccess } from "@/lib/diagnostics";
 import { qk } from "@/lib/queryKeys";
+import type { SkillSummary } from "@/lib/skills";
 import { splitModelKey } from "@/lib/splitModelKey";
 import type { MessagesCache } from "@/lib/sseDispatch";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
@@ -14,6 +15,7 @@ import { usePreferences } from "@/providers/PreferencesProvider";
 interface SendMessageInput {
   text: string;
   images?: Array<{ mime: string; url: string; filename?: string }>;
+  skill?: SkillSummary;
 }
 
 interface StudioInstance {
@@ -38,10 +40,16 @@ export function useSendMessage() {
   const posthog = usePostHog();
 
   return useMutation({
-    mutationFn: async ({ text, images }: SendMessageInput) => {
+    mutationFn: async ({ text, images, skill }: SendMessageInput) => {
       if (!client || !activeSessionId) throw new Error("No client or session");
 
       const messagePrefixes: string[] = [];
+
+      if (skill) {
+        messagePrefixes.push(
+          `[BloxBot Skill Selected: ${skill.id}] Load this exact BloxBot skill with the native skill tool before doing any work on this request. Do not substitute a similarly named Studio MCP skill.`,
+        );
+      }
 
       const activeFolder = sessionFolderById[activeSessionId];
       const activeWorkspaceSettings = activeFolder
@@ -169,6 +177,8 @@ export function useSendMessage() {
         posthog.capture("message_sent", {
           model: selectedModel ?? undefined,
           agent: selectedAgent ?? undefined,
+          skill_invocation: skill ? "explicit" : "implicit_or_none",
+          skill_source: skill?.source,
         });
       } catch (error) {
         recordPromptFailure(error);

@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ChatInput from "@/components/ChatInput";
 import { Toaster } from "@/components/ui/sonner";
 import { qk } from "@/lib/queryKeys";
+import type { SkillSummary } from "@/lib/skills";
 import type { MessagesCache } from "@/lib/sseDispatch";
 import { ActiveSessionContext } from "@/providers/ActiveSessionProvider";
 import { OpenCodeClientContext } from "@/providers/OpenCodeClientProvider";
@@ -92,11 +93,13 @@ function seedState(
   overrides?: {
     config?: Record<string, unknown>;
     messages?: MessagesCache;
+    skills?: SkillSummary[];
   },
 ) {
   qc.setQueryData(qk.sessions, [session]);
   qc.setQueryData(qk.statuses, {});
   qc.setQueryData(qk.agents, []);
+  qc.setQueryData(qk.skills, overrides?.skills ?? []);
   qc.setQueryData(qk.providers, {
     all: [
       {
@@ -143,6 +146,7 @@ function TestChatInput({
   seedOverrides?: {
     config?: Record<string, unknown>;
     messages?: MessagesCache;
+    skills?: SkillSummary[];
   };
 }) {
   const activeSessionIdRef = useRef<string | null>(sessionId);
@@ -186,6 +190,7 @@ beforeEach(() => {
     if (command === "get_opencode_info") return [4096, ""];
     if (command === "get_vscode_bridge_info") return { port: 59300, token: "test-token" };
     if (command === "list_roblox_studios") return [];
+    if (command === "list_bloxbot_skills") return [];
     return undefined;
   });
 });
@@ -231,6 +236,60 @@ describe("ChatInput", () => {
     const args = client.session.promptAsync.mock.calls[0][0];
     expect(args.parts[0].text).toBe("Build a game");
     expect(args.sessionID).toBe("s1");
+  });
+
+  it("loads an explicitly selected enabled skill and resets its chip after send", async () => {
+    const client = createClient();
+    const qc = createQueryClient();
+    const enabledSkill: SkillSummary = {
+      id: "bloxbot-playtest-debugging",
+      description: "Debug a playtest",
+      source: "builtin",
+      enabled: true,
+      editable: false,
+    };
+    const disabledSkill: SkillSummary = {
+      id: "disabled-skill",
+      description: "Should not be selectable",
+      source: "user",
+      enabled: false,
+      editable: true,
+    };
+
+    const { container } = render(
+      <TestChatInput
+        client={client}
+        queryClient={qc}
+        seedOverrides={{ skills: [enabledSkill, disabledSkill] }}
+      />,
+    );
+
+    fireEvent.click(await screen.findByTitle("Choose a skill for this message"));
+    expect(screen.getByText("bloxbot-playtest-debugging")).toBeInTheDocument();
+    expect(screen.queryByText("disabled-skill")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("bloxbot-playtest-debugging"));
+    expect(screen.getByLabelText("Remove bloxbot-playtest-debugging skill")).toBeInTheDocument();
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const image = new File([new Uint8Array([1, 2, 3])], "evidence.png", { type: "image/png" });
+    fireEvent.change(fileInput, { target: { files: [image] } });
+    await screen.findByAltText("evidence.png");
+
+    const textarea = screen.getByPlaceholderText("Describe what you want to build...");
+    fireEvent.change(textarea, { target: { value: "Fix the broken round" } });
+    fireEvent.click(screen.getByTitle("Send"));
+
+    await waitFor(() => expect(client.session.promptAsync).toHaveBeenCalled());
+    const args = client.session.promptAsync.mock.calls[0][0];
+    expect(args.parts[0].text).toContain(
+      "[BloxBot Skill Selected: bloxbot-playtest-debugging]",
+    );
+    expect(args.parts[0].text).toContain("native skill tool before doing any work");
+    expect(args.parts[0].text).toContain("Fix the broken round");
+    expect(args.parts[1]).toMatchObject({ type: "file", mime: "image/png", filename: "evidence.png" });
+    expect(
+      screen.queryByLabelText("Remove bloxbot-playtest-debugging skill"),
+    ).not.toBeInTheDocument();
   });
 
   it("retries transient Studio discovery and activates it before a new chat", async () => {
