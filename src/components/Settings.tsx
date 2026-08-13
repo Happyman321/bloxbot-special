@@ -5,6 +5,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
+import { SkillsSettings } from "@/components/SkillsSettings";
 import { useCompleteOAuth, useStartOAuth } from "@/hooks/mutations/useOAuth";
 import { useDisconnectProvider, useSetApiKey } from "@/hooks/mutations/useSetApiKey";
 import {
@@ -73,7 +74,7 @@ const TECHNOLOGIES = [
   },
 ];
 
-type SettingsTab = "providers" | "models" | "appearance" | "usage" | "about";
+type SettingsTab = "providers" | "models" | "skills" | "appearance" | "usage" | "about";
 
 interface SettingsProps {
   onClose: () => void;
@@ -166,6 +167,36 @@ function Settings({ onClose }: SettingsProps) {
             </svg>
             Models
           </button>
+          <button
+            onClick={() => setTab("skills")}
+            className={`mx-1.5 flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
+              tab === "skills"
+                ? "bg-accent font-medium text-foreground"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+            }`}
+          >
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 2v4" />
+              <path d="M12 18v4" />
+              <path d="m4.93 4.93 2.83 2.83" />
+              <path d="m16.24 16.24 2.83 2.83" />
+              <path d="M2 12h4" />
+              <path d="M18 12h4" />
+              <path d="m4.93 19.07 2.83-2.83" />
+              <path d="m16.24 7.76 2.83-2.83" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+            Skills
+          </button>
 
           <div className="mt-4 px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             App
@@ -254,6 +285,7 @@ function Settings({ onClose }: SettingsProps) {
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
           {tab === "providers" && <ProvidersTab appVersion={appVersion} />}
           {tab === "models" && <ModelsTab />}
+          {tab === "skills" && <SkillsSettings />}
           {tab === "appearance" && <AppearanceTab />}
           {tab === "usage" && <UsageTab />}
           {tab === "about" && <AboutTab appVersion={appVersion} />}

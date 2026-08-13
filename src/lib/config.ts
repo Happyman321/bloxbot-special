@@ -16,6 +16,7 @@ export interface AppConfig {
   theme: "light" | "dark";
   folders: string[];
   sessionFolderById: Record<string, string>;
+  favoriteSessionIdsByWorkspace: Record<string, string[]>;
   activeWorkspace: string;
   folderOpenState: Record<string, boolean>;
   folderInstructionsByName: Record<string, string>;
@@ -38,6 +39,7 @@ const DEFAULT_CONFIG: AppConfig = {
   theme: "light",
   folders: [],
   sessionFolderById: {},
+  favoriteSessionIdsByWorkspace: {},
   activeWorkspace: "all",
   folderOpenState: {},
   folderInstructionsByName: {},
@@ -87,6 +89,7 @@ export async function loadConfig(): Promise<AppConfig> {
         hiddenModels: raw.hiddenModels ?? [],
         folders,
         sessionFolderById: raw.sessionFolderById ?? {},
+        favoriteSessionIdsByWorkspace: raw.favoriteSessionIdsByWorkspace ?? {},
         activeWorkspace: raw.activeWorkspace ?? "all",
         theme: raw.theme ?? "light",
         folderOpenState: raw.folderOpenState ?? {},

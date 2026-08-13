@@ -20,6 +20,7 @@ interface PreferencesContextValue {
   theme: "light" | "dark";
   folders: string[];
   sessionFolderById: Record<string, string>;
+  favoriteSessionIdsByWorkspace: Record<string, string[]>;
   activeWorkspace: string;
   folderOpenState: Record<string, boolean>;
   preferredStudioId: string | null;
@@ -33,6 +34,7 @@ interface PreferencesContextValue {
   createFolder: (name: string) => void;
   renameFolder: (oldName: string, newName: string) => void;
   assignSessionFolder: (sessionId: string, folderName: string | null) => void;
+  toggleFavoriteSession: (sessionId: string) => void;
   setActiveWorkspace: (workspace: string) => void;
   toggleFolderOpen: (folderKey: string) => void;
   setPreferredStudioId: (studioId: string | null) => void;
@@ -63,6 +65,9 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<"light" | "dark">("light");
   const [folders, setFolders] = useState<string[]>([]);
   const [sessionFolderById, setSessionFolderById] = useState<Record<string, string>>({});
+  const [favoriteSessionIdsByWorkspace, setFavoriteSessionIdsByWorkspace] = useState<
+    Record<string, string[]>
+  >({});
   const [activeWorkspace, setActiveWorkspaceState] = useState("all");
   const [folderOpenState, setFolderOpenState] = useState<Record<string, boolean>>({});
   const [preferredStudioId, setPreferredStudioIdState] = useState<string | null>(null);
@@ -82,6 +87,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setThemeState(configData.theme ?? "light");
     setFolders(configData.folders ?? []);
     setSessionFolderById(configData.sessionFolderById ?? {});
+    setFavoriteSessionIdsByWorkspace(configData.favoriteSessionIdsByWorkspace ?? {});
     setActiveWorkspaceState(configData.activeWorkspace ?? "all");
     setFolderOpenState(configData.folderOpenState ?? {});
     setFolderInstructionsByName(configData.folderInstructionsByName ?? {});
@@ -196,9 +202,17 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       const nextWorkspaceSettings = { ...workspaceSettingsByName };
       nextWorkspaceSettings[to] = nextWorkspaceSettings[from] ?? { ...DEFAULT_WORKSPACE_SETTINGS };
       delete nextWorkspaceSettings[from];
+      const nextFavorites = { ...favoriteSessionIdsByWorkspace };
+      if (from in nextFavorites) {
+        nextFavorites[to] = Array.from(
+          new Set([...(nextFavorites[to] ?? []), ...nextFavorites[from]]),
+        );
+        delete nextFavorites[from];
+      }
 
       setFolders(nextFolders);
       setSessionFolderById(nextSessionFolderById);
+      setFavoriteSessionIdsByWorkspace(nextFavorites);
       setFolderOpenState(nextFolderOpenState);
       setFolderInstructionsByName(nextLegacyInstructions);
       setWorkspaceSettingsByName(nextWorkspaceSettings);
@@ -207,6 +221,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       patchConfig({
         folders: nextFolders,
         sessionFolderById: nextSessionFolderById,
+        favoriteSessionIdsByWorkspace: nextFavorites,
         folderOpenState: nextFolderOpenState,
         folderInstructionsByName: nextLegacyInstructions,
         workspaceSettingsByName: nextWorkspaceSettings,
@@ -215,6 +230,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     },
     [
       activeWorkspace,
+      favoriteSessionIdsByWorkspace,
       folderInstructionsByName,
       folderOpenState,
       folders,
@@ -225,16 +241,56 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 
   const assignSessionFolder = useCallback((sessionId: string, folderName: string | null) => {
     setSessionFolderById((prev) => {
+      const oldWorkspace = prev[sessionId] ?? "unfiled";
+      const newWorkspace = folderName?.trim() || "unfiled";
       const next = { ...prev };
       if (folderName?.trim()) {
         next[sessionId] = folderName.trim();
       } else {
         delete next[sessionId];
       }
-      patchConfig({ sessionFolderById: next }).catch(() => {});
+
+      setFavoriteSessionIdsByWorkspace((favoritesPrev) => {
+        if (
+          oldWorkspace === newWorkspace ||
+          !(favoritesPrev[oldWorkspace] ?? []).includes(sessionId)
+        ) {
+          patchConfig({ sessionFolderById: next }).catch(() => {});
+          return favoritesPrev;
+        }
+
+        const favoritesNext = {
+          ...favoritesPrev,
+          [oldWorkspace]: (favoritesPrev[oldWorkspace] ?? []).filter((id) => id !== sessionId),
+          [newWorkspace]: Array.from(new Set([...(favoritesPrev[newWorkspace] ?? []), sessionId])),
+        };
+        patchConfig({
+          sessionFolderById: next,
+          favoriteSessionIdsByWorkspace: favoritesNext,
+        }).catch(() => {});
+        return favoritesNext;
+      });
       return next;
     });
   }, []);
+
+  const toggleFavoriteSession = useCallback(
+    (sessionId: string) => {
+      const workspace = sessionFolderById[sessionId] ?? "unfiled";
+      setFavoriteSessionIdsByWorkspace((prev) => {
+        const current = prev[workspace] ?? [];
+        const next = {
+          ...prev,
+          [workspace]: current.includes(sessionId)
+            ? current.filter((id) => id !== sessionId)
+            : [...current, sessionId],
+        };
+        patchConfig({ favoriteSessionIdsByWorkspace: next }).catch(() => {});
+        return next;
+      });
+    },
+    [sessionFolderById],
+  );
 
   const setActiveWorkspace = useCallback((workspace: string) => {
     setActiveWorkspaceState(workspace);
@@ -329,6 +385,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     theme,
     folders,
     sessionFolderById,
+    favoriteSessionIdsByWorkspace,
     activeWorkspace,
     folderOpenState,
     preferredStudioId,
@@ -342,6 +399,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     createFolder,
     renameFolder,
     assignSessionFolder,
+    toggleFavoriteSession,
     setActiveWorkspace,
     toggleFolderOpen,
     setPreferredStudioId,

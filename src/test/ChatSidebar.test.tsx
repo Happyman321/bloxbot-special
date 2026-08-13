@@ -64,7 +64,10 @@ function createQueryClient() {
   });
 }
 
-function seedState(qc: QueryClient, opts: { sessions?: Session[] } = {}) {
+function seedState(
+  qc: QueryClient,
+  opts: { sessions?: Session[]; config?: Record<string, unknown> } = {},
+) {
   const sessions = opts.sessions ?? [];
 
   qc.setQueryData(qk.sessions, sessions);
@@ -74,6 +77,14 @@ function seedState(qc: QueryClient, opts: { sessions?: Session[] } = {}) {
   qc.setQueryData(qk.config, {
     lastModel: null,
     hiddenModels: [],
+    folders: [],
+    sessionFolderById: {},
+    favoriteSessionIdsByWorkspace: {},
+    activeWorkspace: "all",
+    folderOpenState: {},
+    folderInstructionsByName: {},
+    workspaceSettingsByName: {},
+    ...(opts.config ?? {}),
   });
 }
 
@@ -143,6 +154,56 @@ describe("ChatSidebar", () => {
 
     expect(await screen.findByText("Session Alpha")).toBeInTheDocument();
     expect(screen.getByText("Session Beta")).toBeInTheDocument();
+  });
+
+  it("moves favourited sessions to the top and separates them from other sessions", async () => {
+    const client = createClient();
+    const qc = createQueryClient();
+    seedState(qc, {
+      sessions: [makeSession("s1", "Session Alpha"), makeSession("s2", "Session Beta")],
+    });
+
+    render(<TestSidebar client={client} queryClient={qc} />);
+
+    const favoriteButtons = await screen.findAllByTitle("Add to favourites");
+    await act(async () => {
+      fireEvent.click(favoriteButtons[1]);
+    });
+
+    const betaRow = screen.getByTestId("session-row-s2");
+    const alphaRow = screen.getByTestId("session-row-s1");
+    expect(
+      betaRow.compareDocumentPosition(alphaRow) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.getByTestId("favorites-divider")).toBeInTheDocument();
+    expect(screen.getByTitle("Remove from favourites")).toBeInTheDocument();
+  });
+
+  it("scopes favourites to the session workspace", async () => {
+    const client = createClient();
+    const qc = createQueryClient();
+    seedState(qc, {
+      sessions: [makeSession("s1", "Workspace A Chat"), makeSession("s2", "Workspace B Chat")],
+      config: {
+        folders: ["Workspace A", "Workspace B"],
+        sessionFolderById: { s1: "Workspace A", s2: "Workspace B" },
+        favoriteSessionIdsByWorkspace: { "Workspace A": ["s1"] },
+        activeWorkspace: "Workspace A",
+      },
+    });
+
+    render(<TestSidebar client={client} queryClient={qc} />);
+
+    expect(await screen.findByText("Workspace A Chat")).toBeInTheDocument();
+    expect(screen.queryByText("Workspace B Chat")).not.toBeInTheDocument();
+    expect(screen.getByTitle("Remove from favourites")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "Workspace B" } });
+
+    expect(await screen.findByText("Workspace B Chat")).toBeInTheDocument();
+    expect(screen.queryByText("Workspace A Chat")).not.toBeInTheDocument();
+    expect(screen.getByTitle("Add to favourites")).toBeInTheDocument();
+    expect(screen.queryByTestId("favorites-divider")).not.toBeInTheDocument();
   });
 
   it("hides Dictator-managed parent and worker sessions from normal chat", async () => {

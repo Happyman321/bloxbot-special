@@ -925,6 +925,16 @@ const ToolPartView = memo(function ToolPartView({
 
   function renderToolContent() {
     switch (tool) {
+      case "skill": {
+        const skillName = String(input.name ?? input.id ?? input.skill ?? "skill");
+        return (
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <span aria-hidden="true">✦</span>
+            <span>{status === "completed" ? "Loaded skill:" : "Loading skill:"}</span>
+            <span className="font-mono font-medium text-foreground">{skillName}</span>
+          </div>
+        );
+      }
       case "bash":
         return <BashToolView input={input} output={output} status={status} />;
       case "edit":
@@ -963,6 +973,7 @@ const ToolPartView = memo(function ToolPartView({
           "task",
           "webfetch",
           "todowrite",
+          "skill",
         ].includes(tool) && (
           <div className="mb-1 text-[11px] font-medium text-foreground">{title}</div>
         )}

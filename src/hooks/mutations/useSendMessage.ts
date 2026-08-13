@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { chatErrorMessage } from "@/lib/chatErrors";
 import { recordPromptFailure, recordPromptStart, recordPromptSuccess } from "@/lib/diagnostics";
 import { qk } from "@/lib/queryKeys";
+import type { SkillSummary } from "@/lib/skills";
 import { splitModelKey } from "@/lib/splitModelKey";
 import type { MessagesCache } from "@/lib/sseDispatch";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
@@ -14,6 +15,13 @@ import { usePreferences } from "@/providers/PreferencesProvider";
 interface SendMessageInput {
   text: string;
   images?: Array<{ mime: string; url: string; filename?: string }>;
+  skill?: SkillSummary;
+}
+
+interface StudioInstance {
+  id: string;
+  name: string;
+  active: boolean;
 }
 
 export function useSendMessage() {
@@ -32,14 +40,14 @@ export function useSendMessage() {
   const posthog = usePostHog();
 
   return useMutation({
-    mutationFn: async ({ text, images }: SendMessageInput) => {
+    mutationFn: async ({ text, images, skill }: SendMessageInput) => {
       if (!client || !activeSessionId) throw new Error("No client or session");
 
       const messagePrefixes: string[] = [];
 
-      if (preferredStudioId) {
+      if (skill) {
         messagePrefixes.push(
-          `[Studio Target Already Active: ${preferredStudioId}] BloxBot has already activated this exact Studio for the request. Do not list Studios or call set_active_studio; use the active Studio directly.`,
+          `[BloxBot Skill Selected: ${skill.id}] Load this exact BloxBot skill with the native skill tool before doing any work on this request. Do not substitute a similarly named Studio MCP skill.`,
         );
       }
 
@@ -49,6 +57,44 @@ export function useSendMessage() {
         : undefined;
       const cachedMessages = queryClient.getQueryData<MessagesCache>(qk.messages(activeSessionId));
       const isFirstChatMessage = (cachedMessages?.messageIds.length ?? 0) === 0;
+
+      if (preferredStudioId) {
+        messagePrefixes.push(
+          `[Studio Target Already Active: ${preferredStudioId}] BloxBot has already activated this exact Studio for the request. Do not list Studios or call set_active_studio; use the active Studio directly.`,
+        );
+      } else if (isFirstChatMessage && activeWorkspaceSettings?.type !== "vscode") {
+        let detectedStudios: StudioInstance[] = [];
+
+        // Studio discovery can briefly return an empty list even while the app's
+        // connection indicator is already green. Retry once before handing the
+        // request to a brand-new chat so the model does not mistake that race for
+        // a disconnected Studio session.
+        for (let attempt = 0; attempt < 2 && detectedStudios.length === 0; attempt += 1) {
+          try {
+            detectedStudios = await invoke<StudioInstance[]>("list_roblox_studios");
+          } catch (error) {
+            if (attempt === 1) {
+              console.warn("Unable to preflight Roblox Studio for the new chat:", error);
+            }
+          }
+        }
+
+        const detectedTarget =
+          detectedStudios.find((studio) => studio.active) ??
+          (detectedStudios.length === 1 ? detectedStudios[0] : undefined);
+        const detectedStudioId = detectedTarget?.id.trim();
+
+        if (detectedStudioId) {
+          try {
+            await invoke("set_active_roblox_studio", { studioId: detectedStudioId });
+            messagePrefixes.push(
+              `[Studio Target Already Active: ${detectedStudioId}] BloxBot verified and activated this Studio before starting the new chat. Do not list Studios or call set_active_studio; use the active Studio directly.`,
+            );
+          } catch (error) {
+            console.warn("Unable to activate the auto-detected Roblox Studio:", error);
+          }
+        }
+      }
 
       if (activeFolder && isFirstChatMessage) {
         const folderInstructions =
@@ -131,6 +177,8 @@ export function useSendMessage() {
         posthog.capture("message_sent", {
           model: selectedModel ?? undefined,
           agent: selectedAgent ?? undefined,
+          skill_invocation: skill ? "explicit" : "implicit_or_none",
+          skill_source: skill?.source,
         });
       } catch (error) {
         recordPromptFailure(error);

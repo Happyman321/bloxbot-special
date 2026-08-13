@@ -65,11 +65,13 @@ const ChatSidebar = memo(function ChatSidebar({
   const {
     folders,
     sessionFolderById,
+    favoriteSessionIdsByWorkspace,
     activeWorkspace,
     setActiveWorkspace,
     createFolder,
     renameFolder,
     assignSessionFolder,
+    toggleFavoriteSession,
     workspaceSettingsByName,
     updateWorkspaceSettings,
   } = usePreferences();
@@ -124,6 +126,22 @@ const ChatSidebar = memo(function ChatSidebar({
     }
     return normalSessions.filter((session) => sessionFolderById[session.id] === activeWorkspace);
   }, [activeWorkspace, managedDictatorSessionIds, sessionFolderById, sessions]);
+
+  const favoriteSessionIds = useMemo(
+    () =>
+      new Set(
+        activeWorkspace === "all"
+          ? Object.values(favoriteSessionIdsByWorkspace).flat()
+          : (favoriteSessionIdsByWorkspace[activeWorkspace] ?? []),
+      ),
+    [activeWorkspace, favoriteSessionIdsByWorkspace],
+  );
+
+  const orderedSessions = useMemo(() => {
+    const favorites = visibleSessions.filter((session) => favoriteSessionIds.has(session.id));
+    const others = visibleSessions.filter((session) => !favoriteSessionIds.has(session.id));
+    return [...favorites, ...others];
+  }, [favoriteSessionIds, visibleSessions]);
 
   function startRename(session: { id: string; title?: string }) {
     setEditingId(session.id);
@@ -410,180 +428,218 @@ const ChatSidebar = memo(function ChatSidebar({
               </div>
             )}
 
-            {visibleSessions.map((session, index) => {
+            {orderedSessions.map((session, index) => {
               const isActive = session.id === activeSessionId;
               const isEditing = session.id === editingId;
+              const isFavorite = favoriteSessionIds.has(session.id);
               const status = sessionStatuses[session.id];
               const folder = sessionFolderById[session.id];
+              const showFavoriteDivider =
+                index > 0 && !isFavorite && favoriteSessionIds.has(orderedSessions[index - 1].id);
 
               return (
-                <div
-                  key={session.id}
-                  className={`animate-slide-in-left ${pickerSessionId === session.id ? "relative z-[90]" : ""}`}
-                  style={{ animationDelay: `${index * 30}ms` }}
-                >
+                <div key={session.id}>
+                  {showFavoriteDivider && (
+                    <div
+                      className="mx-3 my-1 border-t"
+                      data-testid="favorites-divider"
+                      aria-hidden="true"
+                    />
+                  )}
                   <div
-                    className={`group relative mx-1 flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 transition-colors duration-150 ${
-                      isActive
-                        ? "bg-accent text-foreground"
-                        : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                    }`}
-                    onClick={() => !isEditing && handleSelect(session.id)}
+                    className={`animate-slide-in-left ${pickerSessionId === session.id ? "relative z-[90]" : ""}`}
+                    style={{ animationDelay: `${index * 30}ms` }}
                   >
                     <div
-                      className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-300 ${statusDot(status)}`}
-                    />
-                    <div className="min-w-0 flex-1">
-                      {isEditing ? (
-                        <input
-                          ref={editRef}
-                          value={editValue}
-                          onChange={(event) => setEditValue(event.target.value)}
-                          onBlur={commitRename}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") commitRename();
-                            if (event.key === "Escape") setEditingId(null);
-                          }}
-                          className="w-full rounded bg-background px-1 text-xs outline-none ring-1 ring-ring"
-                          onClick={(event) => event.stopPropagation()}
-                        />
-                      ) : (
-                        <div className="truncate text-xs font-medium leading-snug">
-                          {session.title || "Untitled"}
+                      data-testid={`session-row-${session.id}`}
+                      className={`group relative mx-1 flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 transition-colors duration-150 ${
+                        isActive
+                          ? "bg-accent text-foreground"
+                          : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                      }`}
+                      onClick={() => !isEditing && handleSelect(session.id)}
+                    >
+                      <div
+                        className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full transition-colors duration-300 ${statusDot(status)}`}
+                      />
+                      <div className="min-w-0 flex-1">
+                        {isEditing ? (
+                          <input
+                            ref={editRef}
+                            value={editValue}
+                            onChange={(event) => setEditValue(event.target.value)}
+                            onBlur={commitRename}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") commitRename();
+                              if (event.key === "Escape") setEditingId(null);
+                            }}
+                            className="w-full rounded bg-background px-1 text-xs outline-none ring-1 ring-ring"
+                            onClick={(event) => event.stopPropagation()}
+                          />
+                        ) : (
+                          <div className="truncate text-xs font-medium leading-snug">
+                            {session.title || "Untitled"}
+                          </div>
+                        )}
+                        <div className="mt-0.5 text-[10px] text-muted-foreground">
+                          {formatTime(session.time.updated)}
+                        </div>
+                        {folder && (
+                          <div className="mt-1 inline-flex rounded bg-secondary px-1.5 py-0.5 text-[9px] font-medium text-secondary-foreground">
+                            {folder}
+                          </div>
+                        )}
+                      </div>
+
+                      {!isEditing && (
+                        <div
+                          className={`absolute inset-y-0 right-0 flex items-center gap-0.5 rounded-r-md pl-4 pr-1.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 ${
+                            isActive
+                              ? "bg-gradient-to-l from-accent from-60% to-transparent"
+                              : "bg-gradient-to-l from-card from-60% to-transparent group-hover:from-accent/50"
+                          }`}
+                        >
+                          <button
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              toggleFavoriteSession(session.id);
+                            }}
+                            className={`flex h-5 w-5 items-center justify-center rounded transition-colors hover:text-foreground ${
+                              isFavorite ? "text-amber-500" : "text-muted-foreground"
+                            }`}
+                            title={isFavorite ? "Remove from favourites" : "Add to favourites"}
+                            aria-label={isFavorite ? "Remove from favourites" : "Add to favourites"}
+                          >
+                            <svg
+                              width="11"
+                              height="11"
+                              viewBox="0 0 24 24"
+                              fill={isFavorite ? "currentColor" : "none"}
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              startRename(session);
+                            }}
+                            className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
+                            title="Rename"
+                          >
+                            <svg
+                              width="10"
+                              height="10"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setPickerSessionId((prev) =>
+                                prev === session.id ? null : session.id,
+                              );
+                              setNewFolderName("");
+                            }}
+                            className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
+                            title="Move to folder"
+                          >
+                            <svg
+                              width="10"
+                              height="10"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              deleteSession.mutate(session.id);
+                            }}
+                            className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:text-destructive"
+                            title="Delete"
+                          >
+                            <svg
+                              width="10"
+                              height="10"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <line x1="18" y1="6" x2="6" y2="18" />
+                              <line x1="6" y1="6" x2="18" y2="18" />
+                            </svg>
+                          </button>
                         </div>
                       )}
-                      <div className="mt-0.5 text-[10px] text-muted-foreground">
-                        {formatTime(session.time.updated)}
-                      </div>
-                      {folder && (
-                        <div className="mt-1 inline-flex rounded bg-secondary px-1.5 py-0.5 text-[9px] font-medium text-secondary-foreground">
-                          {folder}
+
+                      {pickerSessionId === session.id && (
+                        <div
+                          ref={pickerRef}
+                          className="absolute right-2 top-7 z-[100] w-44 rounded-md border bg-popover p-2 text-[11px] shadow-lg"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <div className="mb-1 font-medium text-foreground">Move to folder</div>
+                          <div className="max-h-28 space-y-1 overflow-y-auto">
+                            <button
+                              onClick={() => moveSession(session.id, null)}
+                              className="w-full rounded px-1.5 py-1 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                            >
+                              Unfiled
+                            </button>
+                            {folders.map((folderName) => (
+                              <button
+                                key={folderName}
+                                onClick={() => moveSession(session.id, folderName)}
+                                className="w-full rounded px-1.5 py-1 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                              >
+                                {folderName}
+                              </button>
+                            ))}
+                          </div>
+
+                          <div className="mt-2 flex items-center gap-1">
+                            <input
+                              value={newFolderName}
+                              onChange={(event) => setNewFolderName(event.target.value)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  handleCreateAndMove(session.id);
+                                }
+                              }}
+                              placeholder="New folder"
+                              className="h-7 min-w-0 flex-1 rounded border bg-background px-2 text-[11px] outline-none ring-ring focus-visible:ring-1"
+                            />
+                            <button
+                              onClick={() => handleCreateAndMove(session.id)}
+                              className="h-7 rounded border px-2 text-[10px] font-medium transition-colors hover:bg-accent"
+                            >
+                              Add
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
-
-                    {!isEditing && (
-                      <div
-                        className={`absolute inset-y-0 right-0 flex items-center gap-0.5 rounded-r-md pl-4 pr-1.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 ${
-                          isActive
-                            ? "bg-gradient-to-l from-accent from-60% to-transparent"
-                            : "bg-gradient-to-l from-card from-60% to-transparent group-hover:from-accent/50"
-                        }`}
-                      >
-                        <button
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            startRename(session);
-                          }}
-                          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
-                          title="Rename"
-                        >
-                          <svg
-                            width="10"
-                            height="10"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setPickerSessionId((prev) => (prev === session.id ? null : session.id));
-                            setNewFolderName("");
-                          }}
-                          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:text-foreground"
-                          title="Move to folder"
-                        >
-                          <svg
-                            width="10"
-                            height="10"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            deleteSession.mutate(session.id);
-                          }}
-                          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:text-destructive"
-                          title="Delete"
-                        >
-                          <svg
-                            width="10"
-                            height="10"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <line x1="18" y1="6" x2="6" y2="18" />
-                            <line x1="6" y1="6" x2="18" y2="18" />
-                          </svg>
-                        </button>
-                      </div>
-                    )}
-
-                    {pickerSessionId === session.id && (
-                      <div
-                        ref={pickerRef}
-                        className="absolute right-2 top-7 z-[100] w-44 rounded-md border bg-popover p-2 text-[11px] shadow-lg"
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        <div className="mb-1 font-medium text-foreground">Move to folder</div>
-                        <div className="max-h-28 space-y-1 overflow-y-auto">
-                          <button
-                            onClick={() => moveSession(session.id, null)}
-                            className="w-full rounded px-1.5 py-1 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                          >
-                            Unfiled
-                          </button>
-                          {folders.map((folderName) => (
-                            <button
-                              key={folderName}
-                              onClick={() => moveSession(session.id, folderName)}
-                              className="w-full rounded px-1.5 py-1 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                            >
-                              {folderName}
-                            </button>
-                          ))}
-                        </div>
-
-                        <div className="mt-2 flex items-center gap-1">
-                          <input
-                            value={newFolderName}
-                            onChange={(event) => setNewFolderName(event.target.value)}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter") {
-                                handleCreateAndMove(session.id);
-                              }
-                            }}
-                            placeholder="New folder"
-                            className="h-7 min-w-0 flex-1 rounded border bg-background px-2 text-[11px] outline-none ring-ring focus-visible:ring-1"
-                          />
-                          <button
-                            onClick={() => handleCreateAndMove(session.id)}
-                            className="h-7 rounded border px-2 text-[10px] font-medium transition-colors hover:bg-accent"
-                          >
-                            Add
-                          </button>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
               );

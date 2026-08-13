@@ -763,6 +763,72 @@ describe("User journeys", () => {
     });
   });
 
+  it("renders native skill activity as a compact loaded status", async () => {
+    const session = makeSession("s1", "My Session");
+    const client = createClient({
+      get: vi.fn().mockResolvedValue({ data: session }),
+      messages: vi.fn().mockResolvedValue({ data: [] }),
+    });
+    const queryClient = createQueryClient();
+    seedReadyState(queryClient, { sessions: [session] });
+    queryClient.setQueryData<MessagesCache>(qk.messages("s1"), {
+      messageIds: [],
+      messagesById: {},
+    });
+    queryClient.setQueryData(qk.todos("s1"), []);
+    queryClient.setQueryData(qk.questions, null);
+    queryClient.setQueryData(qk.permissions, null);
+    render(<TestApp client={client} queryClient={queryClient} />);
+    fireEvent.click(await screen.findByText("My Session"));
+    await screen.findByPlaceholderText("Describe what you want to build...");
+
+    const activeRef = { current: "s1" };
+    act(() => {
+      sseDispatch(
+        queryClient,
+        {
+          type: "message.updated",
+          properties: {
+            info: {
+              id: "msg_skill",
+              sessionID: "s1",
+              role: "assistant",
+              time: { created: Date.now(), updated: Date.now() },
+            },
+          },
+        } as never,
+        activeRef,
+      );
+      sseDispatch(
+        queryClient,
+        {
+          type: "message.part.updated",
+          properties: {
+            part: {
+              id: "tool_skill",
+              messageID: "msg_skill",
+              sessionID: "s1",
+              type: "tool",
+              tool: "skill",
+              state: {
+                status: "completed",
+                input: { name: "bloxbot-playtest-debugging" },
+                output: "Skill loaded",
+              },
+              time: { created: Date.now(), updated: Date.now() },
+            },
+          },
+        } as never,
+        activeRef,
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Loaded skill:")).toBeInTheDocument();
+      expect(screen.getByText("bloxbot-playtest-debugging")).toBeInTheDocument();
+    });
+  });
+
   it("SSE session.created adds a new session to the sidebar", async () => {
     const s1 = makeSession("s1", "Existing Session");
     const client = createClient();

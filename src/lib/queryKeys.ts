@@ -11,6 +11,7 @@ export const qk = {
   providers: ["providers"] as const,
   imageProjects: ["image-projects"] as const,
   agents: ["agents"] as const,
+  skills: ["skills"] as const,
   questions: ["questions"] as const,
   permissions: ["permissions"] as const,
   config: ["config"] as const,

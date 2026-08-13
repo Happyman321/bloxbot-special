@@ -129,6 +129,39 @@ pub fn bundled_vscode_mcp_server_path() -> Result<PathBuf, String> {
     ))
 }
 
+/// Returns the directory containing BloxBot's bundled, read-only skills.
+pub fn bundled_skills_dir() -> Result<PathBuf, String> {
+    let sidecar = sidecar_dir()?;
+
+    #[cfg(target_os = "macos")]
+    let prod_path = sidecar
+        .parent()
+        .map(|p| p.join("Resources").join("resources").join("skills"))
+        .unwrap_or_default();
+    #[cfg(not(target_os = "macos"))]
+    let prod_path = sidecar.join("resources").join("skills");
+
+    if prod_path.exists() {
+        return Ok(prod_path);
+    }
+
+    let dev_path = sidecar
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.join("resources").join("skills"))
+        .unwrap_or_default();
+
+    if dev_path.exists() {
+        return Ok(dev_path);
+    }
+
+    Err(format!(
+        "Bundled skills not found. Checked:\n  {}\n  {}",
+        prod_path.display(),
+        dev_path.display()
+    ))
+}
+
 /// Returns the path to the bundled OpenCode sidecar binary.
 #[allow(dead_code)]
 pub fn bundled_opencode_path() -> Result<PathBuf, String> {
