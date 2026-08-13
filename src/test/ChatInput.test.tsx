@@ -233,6 +233,37 @@ describe("ChatInput", () => {
     expect(args.sessionID).toBe("s1");
   });
 
+  it("retries transient Studio discovery and activates it before a new chat", async () => {
+    const client = createClient();
+    let studioDiscoveryCalls = 0;
+    vi.mocked(invoke).mockImplementation(async (command: string) => {
+      if (command === "list_roblox_studios") {
+        studioDiscoveryCalls += 1;
+        return studioDiscoveryCalls === 1
+          ? []
+          : [{ id: "studio-1", name: "Connected Place", active: true }];
+      }
+      return undefined;
+    });
+    const qc = createQueryClient();
+
+    render(<TestChatInput client={client} queryClient={qc} />);
+
+    const textarea = await screen.findByPlaceholderText("Describe what you want to build...");
+    fireEvent.change(textarea, { target: { value: "Inspect the game" } });
+    fireEvent.click(screen.getByTitle("Send"));
+
+    await waitFor(() => expect(client.session.promptAsync).toHaveBeenCalled());
+    expect(studioDiscoveryCalls).toBe(2);
+    expect(invoke).toHaveBeenCalledWith("set_active_roblox_studio", {
+      studioId: "studio-1",
+    });
+    const args = client.session.promptAsync.mock.calls[0][0];
+    expect(args.parts[0].text).toContain("[Studio Target Already Active: studio-1]");
+    expect(args.parts[0].text).toContain("verified and activated this Studio");
+    expect(args.parts[0].text).toContain("Inspect the game");
+  });
+
   it("sends message on Enter key (without Shift)", async () => {
     const client = createClient();
     const qc = createQueryClient();
