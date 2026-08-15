@@ -2,7 +2,9 @@ import type { Session } from "@opencode-ai/sdk/v2/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { memo, useEffect, useMemo, useState } from "react";
 
+import BotFace from "@/components/BotFace";
 import ChatMessages from "@/components/ChatMessages";
+import { useCompanionSafeOffset } from "@/hooks/useCompanionSafeOffset";
 import {
   useAbortDictatorSession,
   useApproveDictatorPlan,
@@ -29,41 +31,7 @@ import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 
 function DictatorFace({ active }: { active?: boolean }) {
   return (
-    <svg
-      width="36"
-      height="36"
-      viewBox="0 0 512 512"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      className={active ? "bloxbot-dictator" : "bloxbot-face-think"}
-      aria-hidden="true"
-    >
-      <rect x="32" y="32" width="448" height="448" rx="112" fill="currentColor" />
-      <rect
-        className="bloxbot-eye"
-        x="144"
-        y="176"
-        width="72"
-        height="72"
-        rx="24"
-        fill="var(--background)"
-      />
-      <rect
-        className="bloxbot-eye"
-        x="296"
-        y="176"
-        width="72"
-        height="72"
-        rx="24"
-        fill="var(--background)"
-      />
-      <path
-        d="M168 328C168 328 204.8 376 256 376C307.2 376 344 328 344 328"
-        stroke="var(--background)"
-        strokeWidth="32"
-        strokeLinecap="round"
-      />
-    </svg>
+    <BotFace mood={active ? "thinking" : "idle"} accessory="none" size={36} showAccessory={false} />
   );
 }
 
@@ -135,7 +103,7 @@ const WorkerRow = memo(function WorkerRow({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          {busy && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />}
+          {busy && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-warning-border" />}
           <span className="text-[10px] text-muted-foreground">{open ? "Hide" : "Open"}</span>
         </div>
       </button>
@@ -163,6 +131,7 @@ function DictatorInput({ profile }: { profile: DictatorProfile }) {
   const [text, setText] = useState("");
   const send = useSendDictatorMessage();
   const canSend = text.trim().length > 0 && !send.isPending;
+  const companionOffsetRef = useCompanionSafeOffset("--companion-dictator-offset");
 
   function submit() {
     if (!canSend) return;
@@ -171,7 +140,7 @@ function DictatorInput({ profile }: { profile: DictatorProfile }) {
   }
 
   return (
-    <div className="shrink-0 border-t bg-card px-4 py-3">
+    <div ref={companionOffsetRef} className="shrink-0 border-t bg-card px-4 py-3">
       <div className="rounded-xl border bg-background focus-within:ring-2 focus-within:ring-ring/20">
         <textarea
           value={text}
@@ -617,7 +586,7 @@ function DictatorMode() {
                         : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
                     }`}
                   >
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning-border" />
                     <span className="min-w-0 flex-1 truncate text-xs font-medium">
                       {dictator.name}
                     </span>

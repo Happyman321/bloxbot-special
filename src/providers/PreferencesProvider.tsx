@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
 import { useAgents } from "@/hooks/useAgents";
 import { useConnectedProviders } from "@/hooks/useProviders";
+import { type CompanionPreferences, DEFAULT_COMPANION_PREFERENCES } from "@/lib/companion";
 import {
   type AppConfig,
   DEFAULT_WORKSPACE_SETTINGS,
@@ -11,13 +12,22 @@ import {
 } from "@/lib/config";
 import { qk } from "@/lib/queryKeys";
 import { splitModelKey } from "@/lib/splitModelKey";
+import {
+  applyTheme,
+  DEFAULT_THEME_ID,
+  THEME_BY_ID,
+  type ThemeDefinition,
+  type ThemeId,
+} from "@/lib/themes";
 
 interface PreferencesContextValue {
   selectedModel: string | null;
   selectedAgent: string | null;
   selectedVariant: string | null;
   hiddenModels: Set<string>;
-  theme: "light" | "dark";
+  theme: ThemeId;
+  themeDefinition: ThemeDefinition;
+  companion: CompanionPreferences;
   folders: string[];
   sessionFolderById: Record<string, string>;
   favoriteSessionIdsByWorkspace: Record<string, string[]>;
@@ -30,7 +40,9 @@ interface PreferencesContextValue {
   setSelectedAgent: (name: string) => void;
   setSelectedVariant: (variant: string | null) => void;
   toggleModelVisibility: (modelKey: string) => void;
-  toggleTheme: () => void;
+  setTheme: (theme: ThemeId) => void;
+  updateCompanion: (patch: Partial<CompanionPreferences>) => void;
+  resetCompanion: () => void;
   createFolder: (name: string) => void;
   renameFolder: (oldName: string, newName: string) => void;
   assignSessionFolder: (sessionId: string, folderName: string | null) => void;
@@ -62,7 +74,10 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [selectedAgent, setSelectedAgentState] = useState<string | null>(null);
   const [selectedVariant, setSelectedVariantState] = useState<string | null>(null);
   const [hiddenModels, setHiddenModels] = useState<Set<string>>(new Set());
-  const [theme, setThemeState] = useState<"light" | "dark">("light");
+  const [theme, setThemeState] = useState<ThemeId>(DEFAULT_THEME_ID);
+  const [companion, setCompanionState] = useState<CompanionPreferences>(
+    DEFAULT_COMPANION_PREFERENCES,
+  );
   const [folders, setFolders] = useState<string[]>([]);
   const [sessionFolderById, setSessionFolderById] = useState<Record<string, string>>({});
   const [favoriteSessionIdsByWorkspace, setFavoriteSessionIdsByWorkspace] = useState<
@@ -84,7 +99,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!configData) return;
     setHiddenModels(new Set(configData.hiddenModels ?? []));
-    setThemeState(configData.theme ?? "light");
+    setThemeState(configData.theme ?? DEFAULT_THEME_ID);
+    setCompanionState(configData.companion ?? DEFAULT_COMPANION_PREFERENCES);
     setFolders(configData.folders ?? []);
     setSessionFolderById(configData.sessionFolderById ?? {});
     setFavoriteSessionIdsByWorkspace(configData.favoriteSessionIdsByWorkspace ?? {});
@@ -95,7 +111,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   }, [configData]);
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
+    applyTheme(theme);
   }, [theme]);
 
   // Restore last used model if its provider is still connected
@@ -143,12 +159,23 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const toggleTheme = useCallback(() => {
-    setThemeState((prev) => {
-      const next = prev === "dark" ? "light" : "dark";
-      patchConfig({ theme: next }).catch(() => {});
+  const setTheme = useCallback((next: ThemeId) => {
+    setThemeState(next);
+    patchConfig({ theme: next }).catch(() => {});
+  }, []);
+
+  const updateCompanion = useCallback((patch: Partial<CompanionPreferences>) => {
+    setCompanionState((previous) => {
+      const next = { ...previous, ...patch };
+      patchConfig({ companion: next }).catch(() => {});
       return next;
     });
+  }, []);
+
+  const resetCompanion = useCallback(() => {
+    const next = { ...DEFAULT_COMPANION_PREFERENCES };
+    setCompanionState(next);
+    patchConfig({ companion: next }).catch(() => {});
   }, []);
 
   const createFolder = useCallback((name: string) => {
@@ -383,6 +410,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     selectedVariant,
     hiddenModels,
     theme,
+    themeDefinition: THEME_BY_ID[theme],
+    companion,
     folders,
     sessionFolderById,
     favoriteSessionIdsByWorkspace,
@@ -395,7 +424,9 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setSelectedAgent,
     setSelectedVariant,
     toggleModelVisibility,
-    toggleTheme,
+    setTheme,
+    updateCompanion,
+    resetCompanion,
     createFolder,
     renameFolder,
     assignSessionFolder,

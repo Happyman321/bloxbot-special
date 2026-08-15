@@ -5,6 +5,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
+import AppearanceSettings from "@/components/AppearanceSettings";
 import { SkillsSettings } from "@/components/SkillsSettings";
 import { useCompleteOAuth, useStartOAuth } from "@/hooks/mutations/useOAuth";
 import { useDisconnectProvider, useSetApiKey } from "@/hooks/mutations/useSetApiKey";
@@ -286,7 +287,7 @@ function Settings({ onClose }: SettingsProps) {
           {tab === "providers" && <ProvidersTab appVersion={appVersion} />}
           {tab === "models" && <ModelsTab />}
           {tab === "skills" && <SkillsSettings />}
-          {tab === "appearance" && <AppearanceTab />}
+          {tab === "appearance" && <AppearanceSettings />}
           {tab === "usage" && <UsageTab />}
           {tab === "about" && <AboutTab appVersion={appVersion} />}
         </div>
@@ -666,8 +667,8 @@ function ProvidersTab({ appVersion }: { appVersion: string | null }) {
               >
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{provider.name}</span>
-                  <span className="flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  <span className="flex items-center gap-1.5 rounded-full bg-success-surface px-2 py-0.5 text-[10px] font-medium text-success-foreground">
+                    <span className="h-1.5 w-1.5 rounded-full bg-success-border" />
                     Connected
                   </span>
                 </div>
@@ -675,7 +676,7 @@ function ProvidersTab({ appVersion }: { appVersion: string | null }) {
                   <button
                     onClick={() => handleDisconnect(provider.id)}
                     disabled={disconnecting === provider.id}
-                    className="text-[11px] text-muted-foreground transition-colors hover:text-red-600 disabled:opacity-50"
+                    className="text-[11px] text-muted-foreground transition-colors hover:text-danger-foreground disabled:opacity-50"
                   >
                     {disconnecting === provider.id ? "..." : "Disconnect"}
                   </button>
@@ -719,7 +720,10 @@ function ProvidersTab({ appVersion }: { appVersion: string | null }) {
 
       {/* Connect dialog overlay */}
       {dialog.step !== "closed" && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <div
+          data-companion-blocking="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+        >
           <div
             ref={dialogRef}
             className="mx-4 w-full max-w-sm rounded-xl border bg-card p-5 shadow-lg"
@@ -1126,36 +1130,6 @@ function ModelsTab() {
             Connect a provider to see available models.
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-function AppearanceTab() {
-  const { theme, toggleTheme } = usePreferences();
-
-  return (
-    <div className="mx-auto w-full max-w-3xl p-5">
-      <h4 className="text-sm font-semibold">Appearance</h4>
-      <p className="mt-1 text-xs text-muted-foreground">
-        Choose how BloxBot looks. Your preference is saved on this device.
-      </p>
-
-      <div className="mt-4 rounded-lg border bg-card p-4">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <div className="text-xs font-medium">Dark mode</div>
-            <div className="mt-1 text-[11px] text-muted-foreground">
-              Switch between a bright and low-light interface.
-            </div>
-          </div>
-          <button
-            onClick={toggleTheme}
-            className="inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium transition-colors hover:bg-accent"
-          >
-            {theme === "dark" ? "Use light mode" : "Use dark mode"}
-          </button>
-        </div>
       </div>
     </div>
   );

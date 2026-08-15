@@ -50,8 +50,21 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  /* Custom semantic colors */
-  --color-success: oklch(0.556 0.16 142);
+  /* Status colors are paired surface/foreground/border tokens so every
+     curated theme can keep alerts and badges readable. */
+  --color-success: var(--success-foreground);
+  --color-success-surface: var(--success-surface);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-border: var(--success-border);
+  --color-warning-surface: var(--warning-surface);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-border: var(--warning-border);
+  --color-info-surface: var(--info-surface);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-border: var(--info-border);
+  --color-danger-surface: var(--danger-surface);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-danger-border: var(--danger-border);
 }
 
 /* ── Stone palette (light only) ──────────────────────────────────── */
@@ -89,6 +102,18 @@
   --sidebar-accent-foreground: oklch(0.147 0.004 49.25);
   --sidebar-border: oklch(0.923 0.003 48.717);
   --sidebar-ring: oklch(0.553 0.013 58.071);
+  --success-surface: #ecfdf5;
+  --success-foreground: #065f46;
+  --success-border: #059669;
+  --warning-surface: #fffbeb;
+  --warning-foreground: #92400e;
+  --warning-border: #d97706;
+  --info-surface: #eff6ff;
+  --info-foreground: #1e40af;
+  --info-border: #2563eb;
+  --danger-surface: #fff1f2;
+  --danger-foreground: #9f1239;
+  --danger-border: #e11d48;
 }
 
 .dark {
@@ -118,6 +143,18 @@
   --sidebar-accent-foreground: oklch(0.985 0.001 106.424);
   --sidebar-border: oklch(0.336 0.01 56.259);
   --sidebar-ring: oklch(0.553 0.013 58.071);
+  --success-surface: #0b3327;
+  --success-foreground: #a7f3d0;
+  --success-border: #34d399;
+  --warning-surface: #3b2908;
+  --warning-foreground: #fde68a;
+  --warning-border: #fbbf24;
+  --info-surface: #12274d;
+  --info-foreground: #bfdbfe;
+  --info-border: #60a5fa;
+  --danger-surface: #3b1018;
+  --danger-foreground: #fecdd3;
+  --danger-border: #fb7185;
 }
 
 @layer base {
@@ -258,6 +295,37 @@
   70%      { transform: translateY(0) scale(0.99); }
 }
 
+@keyframes bloxbot-success {
+  0%, 100% { transform: translateY(0) scale(1); }
+  35% { transform: translateY(-8px) scale(1.08); }
+  65% { transform: translateY(0) scale(0.96); }
+}
+
+@keyframes bloxbot-error {
+  0%, 100% { transform: rotate(0deg); }
+  20% { transform: rotate(-4deg); }
+  40% { transform: rotate(4deg); }
+  60% { transform: rotate(-2deg); }
+  80% { transform: rotate(2deg); }
+}
+
+@keyframes bloxbot-attention {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-4px) scale(1.04); }
+}
+
+@keyframes bloxbot-wave {
+  0%, 100% { transform: rotate(0deg) translateY(0); }
+  25% { transform: rotate(-7deg) translateY(-3px); }
+  50% { transform: rotate(7deg) translateY(-5px); }
+  75% { transform: rotate(-4deg) translateY(-2px); }
+}
+
+@keyframes bloxbot-propeller {
+  from { transform: rotateY(0deg); }
+  to { transform: rotateY(360deg); }
+}
+
 .bloxbot-face {
   animation: bloxbot-float 2.5s ease-in-out infinite;
 }
@@ -277,6 +345,135 @@
 
 .bloxbot-dot {
   animation: bloxbot-dot-pulse 1.2s ease-in-out infinite;
+}
+
+.bloxbot-mood-idle {
+  animation: bloxbot-float 3.2s ease-in-out infinite;
+}
+
+.bloxbot-mood-thinking {
+  animation: bloxbot-think 1.5s ease-in-out infinite;
+}
+
+.bloxbot-mood-success {
+  animation: bloxbot-success 700ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.bloxbot-mood-error {
+  animation: bloxbot-error 520ms ease-in-out both;
+}
+
+.bloxbot-mood-attention {
+  animation: bloxbot-attention 1.2s ease-in-out infinite;
+}
+
+.bloxbot-mood-wave {
+  animation: bloxbot-wave 700ms ease-in-out 2;
+}
+
+.bloxbot-propeller {
+  transform-origin: 256px 34px;
+  animation: bloxbot-propeller 900ms linear infinite;
+}
+
+.bloxbot-startup-screen {
+  --startup-companion-target-size: var(--startup-companion-size);
+  z-index: 80;
+}
+
+.bloxbot-startup-companion {
+  position: absolute;
+  left: calc(50% - var(--startup-companion-size) / 2);
+  top: calc(50% - var(--startup-companion-size) / 2 - 1rem);
+  width: var(--startup-companion-size);
+  height: var(--startup-companion-size);
+  transition:
+    left 950ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    top 950ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 950ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    height 950ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.bloxbot-startup-copy {
+  top: calc(50% + var(--startup-companion-size) / 2 + 0.5rem);
+  transition:
+    opacity 220ms ease-out,
+    transform 220ms ease-out;
+}
+
+.bloxbot-startup-screen[data-phase="handoff"] {
+  pointer-events: none;
+  background-color: transparent;
+  transition: background-color 260ms ease-out;
+}
+
+.bloxbot-startup-screen[data-phase="handoff"] .bloxbot-startup-companion {
+  left: calc(100% - 0.75rem - var(--startup-companion-target-size));
+  top: calc(
+    100% - var(--companion-chat-offset, 0.75rem) - var(--startup-companion-target-size)
+  );
+  width: var(--startup-companion-target-size);
+  height: var(--startup-companion-target-size);
+}
+
+.bloxbot-startup-screen[data-phase="handoff"] .bloxbot-startup-copy {
+  opacity: 0;
+  transform: translate(-50%, 0.5rem);
+}
+
+.bloxbot-companion-chat {
+  bottom: var(--companion-chat-offset, 0.75rem);
+}
+
+.bloxbot-companion-image {
+  bottom: var(--companion-image-offset, 0.75rem);
+}
+
+.bloxbot-companion-dictator {
+  bottom: var(--companion-dictator-offset, 0.75rem);
+}
+
+.bloxbot-status-bubble {
+  animation: fade-in-up 180ms ease-out both;
+}
+
+@media (max-width: 640px), (max-height: 500px) {
+  .bloxbot-startup-screen {
+    --startup-companion-target-size: 48px;
+  }
+
+  .bloxbot-companion-face {
+    width: 48px;
+    height: 48px;
+  }
+
+  .bloxbot-status-bubble {
+    max-width: 7.5rem;
+  }
+
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bloxbot-face,
+  .bloxbot-face-think,
+  .bloxbot-dictator,
+  .bloxbot-eye,
+  .bloxbot-dot,
+  [class*="bloxbot-mood-"],
+  .bloxbot-propeller,
+  .bloxbot-status-bubble {
+    animation: none !important;
+  }
+
+  .bloxbot-startup-companion,
+  .bloxbot-startup-copy,
+  .bloxbot-startup-screen {
+    transition: none !important;
+  }
+}
+
+body:has([data-companion-blocking="true"]) .bloxbot-companion {
+  display: none;
 }
 
 /* ── Toast styles ────────────────────────────────────────────────── */

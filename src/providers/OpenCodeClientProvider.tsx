@@ -1,12 +1,23 @@
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk/v2/client";
-import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
-import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
-import LoadingScreen from "@/components/LoadingScreen";
+import StartupCompanionScreen from "@/components/StartupCompanionScreen";
+import { DEFAULT_COMPANION_PREFERENCES } from "@/lib/companion";
+import { type AppConfig, loadConfig } from "@/lib/config";
 import { recordSseConnected, recordSseFailure, recordSseReconnecting } from "@/lib/diagnostics";
 import { qk } from "@/lib/queryKeys";
 import { sseDispatch } from "@/lib/sseDispatch";
+import { applyTheme, DEFAULT_THEME_ID, THEME_BY_ID } from "@/lib/themes";
 
 const SSE_RECONNECT_DELAY = 3000;
 const SSE_FAILURE_THRESHOLD = 3;
@@ -21,6 +32,7 @@ interface OpenCodeClientContextValue {
   port: number;
   ready: boolean;
   initError: string | null;
+  startupTransitionComplete?: boolean;
 }
 
 export const OpenCodeClientContext = createContext<OpenCodeClientContextValue>({
@@ -29,6 +41,7 @@ export const OpenCodeClientContext = createContext<OpenCodeClientContextValue>({
   port: 0,
   ready: false,
   initError: null,
+  startupTransitionComplete: false,
 });
 
 export function useOpenCodeClient() {
@@ -49,8 +62,21 @@ export function OpenCodeClientProvider({
   const [client, setClient] = useState<OpencodeClient | null>(null);
   const [ready, setReady] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
+  const [startupTransitionComplete, setStartupTransitionComplete] = useState(false);
 
   const sseAbortRef = useRef<AbortController | null>(null);
+  const { data: startupConfig } = useQuery<AppConfig>({
+    queryKey: qk.config,
+    queryFn: loadConfig,
+  });
+
+  useEffect(() => {
+    if (startupConfig) applyTheme(startupConfig.theme);
+  }, [startupConfig]);
+
+  const finishStartupTransition = useCallback(() => {
+    setStartupTransitionComplete(true);
+  }, []);
 
   // ── Get port from Rust, wait for server, create client ────────────
   useEffect(() => {
@@ -215,22 +241,26 @@ export function OpenCodeClientProvider({
     port,
     ready,
     initError,
+    startupTransitionComplete,
   };
 
-  if (!ready) {
-    return (
-      <OpenCodeClientContext.Provider value={value}>
-        <LoadingScreen
-          message={initError ? "Failed to connect to OpenCode" : "Starting up..."}
-          detail={initError ?? undefined}
-          error={!!initError}
-          onRetry={initError ? () => window.location.reload() : undefined}
-        />
-      </OpenCodeClientContext.Provider>
-    );
-  }
+  const startupCompanion = startupConfig?.companion ?? DEFAULT_COMPANION_PREFERENCES;
+  const startupTheme = THEME_BY_ID[startupConfig?.theme ?? DEFAULT_THEME_ID];
 
-  return <OpenCodeClientContext.Provider value={value}>{children}</OpenCodeClientContext.Provider>;
+  return (
+    <OpenCodeClientContext.Provider value={value}>
+      {ready && children}
+      {!startupTransitionComplete && (
+        <StartupCompanionScreen
+          ready={ready}
+          error={initError}
+          companion={startupCompanion}
+          theme={startupTheme}
+          onComplete={finishStartupTransition}
+        />
+      )}
+    </OpenCodeClientContext.Provider>
+  );
 }
 
 // ── Pre-warm query cache with server state ──

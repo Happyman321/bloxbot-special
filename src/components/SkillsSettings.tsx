@@ -304,7 +304,7 @@ export function SkillsSettings() {
       </div>
 
       {restartRequired && (
-        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs">
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-warning-border bg-warning-surface px-3 py-2 text-xs text-warning-foreground">
           <span>Restart BloxBot to apply skill changes. Your chats are preserved.</span>
           <button type="button" onClick={() => relaunch()} className="font-medium underline">
             Restart now
@@ -359,10 +359,10 @@ export function SkillsSettings() {
                 aria-label={`${skill.enabled ? "Disable" : "Enable"} ${skill.id}`}
                 disabled={busyId === skill.id}
                 onClick={() => toggleSkill(skill)}
-                className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${skill.enabled ? "bg-emerald-500" : "bg-muted"}`}
+                className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${skill.enabled ? "bg-success-border" : "bg-muted"}`}
               >
                 <span
-                  className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${skill.enabled ? "translate-x-4" : "translate-x-0.5"}`}
+                  className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${skill.enabled ? "translate-x-4" : "translate-x-0"}`}
                 />
               </button>
             </div>
@@ -470,6 +470,7 @@ function SkillEditor({
 
   return (
     <div
+      data-companion-blocking="true"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6"
       role="dialog"
       aria-modal="true"

@@ -1,4 +1,5 @@
 import { PostHogProvider } from "@posthog/react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
@@ -22,3 +23,16 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     </PostHogProvider>
   </React.StrictMode>,
 );
+
+// The native window starts hidden so users never see an unpainted white webview.
+// Reveal it after React has had two frames to paint the personalized startup companion,
+// without waiting for the OpenCode sidecar to finish booting.
+requestAnimationFrame(() => {
+  requestAnimationFrame(() => {
+    getCurrentWindow()
+      .show()
+      .catch(() => {
+        // Browser previews do not expose a Tauri window.
+      });
+  });
+});

@@ -7,6 +7,7 @@ mod vscode_bridge;
 use opencode::SharedOpenCodeState;
 use std::sync::Arc;
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+use tauri::webview::PageLoadEvent;
 use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 use tokio::sync::Mutex;
@@ -39,6 +40,13 @@ pub fn run() {
             skills::delete_bloxbot_skill,
             vscode_bridge::get_vscode_bridge_info
         ])
+        .on_page_load(|webview, payload| {
+            if webview.label() == "main" && matches!(payload.event(), PageLoadEvent::Finished) {
+                if let Err(error) = webview.window().show() {
+                    log::warn!("Failed to reveal the painted startup window: {error}");
+                }
+            }
+        })
         .setup(|app| {
             // ── Application menu ──────────────────────────────────
             let app_submenu = SubmenuBuilder::new(app, "BloxBot")
@@ -107,9 +115,9 @@ pub fn run() {
                 }
             });
 
-            // ── Start OpenCode, then show window ─────────────────
-            // The window stays hidden until OpenCode is alive.
-            // If it can't start after retries, exit — there's nothing to show.
+            // ── Start OpenCode in the background ─────────────────
+            // The frontend reveals the native window as soon as its personalized
+            // loading companion has painted, so this work remains visible progress.
             let state = app.state::<SharedOpenCodeState>().inner().clone();
             let bridge_state = app
                 .state::<vscode_bridge::SharedVscodeBridgeState>()
@@ -123,10 +131,7 @@ pub fn run() {
                 }
                 match opencode::start_opencode_server(state, handle.clone()).await {
                     Ok(port) => {
-                        log::info!("OpenCode ready on port {port}, showing window");
-                        if let Some(win) = handle.get_webview_window("main") {
-                            let _ = win.show();
-                        }
+                        log::info!("OpenCode ready on port {port}");
                     }
                     Err(e) => {
                         log::error!("OpenCode failed to start: {e} — exiting");
