@@ -77,7 +77,10 @@ describe("SkillsSettings", () => {
 
   it("toggles a skill and shows the persistent restart banner", async () => {
     renderSkills();
-    fireEvent.click(await screen.findByLabelText("Disable bloxbot-playtest-debugging"));
+    const toggle = await screen.findByLabelText("Disable bloxbot-playtest-debugging");
+    const thumb = toggle.querySelector("span");
+    expect(thumb).toHaveClass("left-0.5", "translate-x-4");
+    fireEvent.click(toggle);
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("set_bloxbot_skill_enabled", {
         id: "bloxbot-playtest-debugging",

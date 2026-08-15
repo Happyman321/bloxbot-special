@@ -362,7 +362,7 @@ export function SkillsSettings() {
                 className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${skill.enabled ? "bg-emerald-500" : "bg-muted"}`}
               >
                 <span
-                  className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${skill.enabled ? "translate-x-4" : "translate-x-0.5"}`}
+                  className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${skill.enabled ? "translate-x-4" : "translate-x-0"}`}
                 />
               </button>
             </div>
