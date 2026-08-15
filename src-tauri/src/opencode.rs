@@ -405,10 +405,10 @@ async fn do_start(
                     "## Tool Error Recovery\n",
                     "If a Roblox MCP tool returns a schema, type, or argument-shape error, correct the MCP tool call and retry once with valid arguments. ",
                     "If the correct call shape is unclear, use another Roblox MCP tool or ask the user for the missing detail. ",
-                    "If a Roblox MCP tool returns `-32001 Request timed out`, treat it as an operation timeout, not proof that Studio is closed or disconnected. ",
+                    "If a Roblox MCP tool other than `list_roblox_studios` returns `-32001 Request timed out`, treat it as an operation timeout, not proof that Studio is closed or disconnected. ",
                     "Call `get_studio_state` once to check the connection. If Studio responds, retry once with a narrower task or complete focused verification with direct Studio tools; do not repeat the same broad timed-out call unchanged. ",
-                    "Studio discovery is eventually consistent: one empty or failed `list_roblox_studios` response does not prove Studio is disconnected. Retry `list_roblox_studios` once before drawing a conclusion. If the retry finds a Studio, continue normally without mentioning the transient miss. If the retry is still empty or fails, call `get_studio_state` once. ",
-                    "Only ask the user to verify or reconnect Studio when the discovery retry and `get_studio_state` both fail. ",
+                    "If `list_roblox_studios` is empty, fails, or times out, do not automatically retry it and do not claim Studio is disconnected. Briefly say no Studio was detected and invite the user to tell you to try again. ",
+                    "Only ask the user to verify or reconnect Studio after a later user-requested discovery retry also fails. ",
                     "Do not pivot to local filesystem, package-source, shell, PowerShell, or BloxBot/OpenCode internals to debug Roblox MCP tool errors.\n\n",
 
                     "## Workflow\n",
@@ -505,8 +505,8 @@ async fn do_start(
                     "If a request is outside what the tools can do (publishing, Team Create, marketplace), say so clearly.\n\n",
 
                     "## MCP Connection Issues\n",
-                    "Never report Studio as disconnected from one empty discovery result, one failed tool call, or one timeout. Follow the recovery steps above first. ",
-                    "Ask the user to verify Studio is running with MCP enabled only after the single discovery retry and `get_studio_state` both fail. ",
+                    "Never report Studio as disconnected from one empty discovery result. Do not retry discovery automatically; let the user ask you to try again. ",
+                    "Ask the user to verify Studio is running with MCP enabled only if that later retry also fails. ",
                     "When that confirmation is necessary, tell the user: \"Roblox Studio must be open and configured. See https://create.roblox.com/docs/studio/mcp\"."
                 )
             },

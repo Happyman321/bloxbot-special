@@ -18,12 +18,6 @@ interface SendMessageInput {
   skill?: SkillSummary;
 }
 
-interface StudioInstance {
-  id: string;
-  name: string;
-  active: boolean;
-}
-
 export function useSendMessage() {
   const { client } = useOpenCodeClient();
   const { activeSessionId } = useActiveSession();
@@ -62,38 +56,6 @@ export function useSendMessage() {
         messagePrefixes.push(
           `[Studio Target Already Active: ${preferredStudioId}] BloxBot has already activated this exact Studio for the request. Do not list Studios or call set_active_studio; use the active Studio directly.`,
         );
-      } else if (isFirstChatMessage && activeWorkspaceSettings?.type !== "vscode") {
-        let detectedStudios: StudioInstance[] = [];
-
-        // Studio discovery can briefly return an empty list even while the app's
-        // connection indicator is already green. Retry once before handing the
-        // request to a brand-new chat so the model does not mistake that race for
-        // a disconnected Studio session.
-        for (let attempt = 0; attempt < 2 && detectedStudios.length === 0; attempt += 1) {
-          try {
-            detectedStudios = await invoke<StudioInstance[]>("list_roblox_studios");
-          } catch (error) {
-            if (attempt === 1) {
-              console.warn("Unable to preflight Roblox Studio for the new chat:", error);
-            }
-          }
-        }
-
-        const detectedTarget =
-          detectedStudios.find((studio) => studio.active) ??
-          (detectedStudios.length === 1 ? detectedStudios[0] : undefined);
-        const detectedStudioId = detectedTarget?.id.trim();
-
-        if (detectedStudioId) {
-          try {
-            await invoke("set_active_roblox_studio", { studioId: detectedStudioId });
-            messagePrefixes.push(
-              `[Studio Target Already Active: ${detectedStudioId}] BloxBot verified and activated this Studio before starting the new chat. Do not list Studios or call set_active_studio; use the active Studio directly.`,
-            );
-          } catch (error) {
-            console.warn("Unable to activate the auto-detected Roblox Studio:", error);
-          }
-        }
       }
 
       if (activeFolder && isFirstChatMessage) {

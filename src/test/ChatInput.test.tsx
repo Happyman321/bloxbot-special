@@ -232,6 +232,7 @@ describe("ChatInput", () => {
     });
 
     expect(client.session.promptAsync).toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalledWith("list_roblox_studios");
     expect(invoke).not.toHaveBeenCalledWith("set_active_roblox_studio", expect.anything());
     const args = client.session.promptAsync.mock.calls[0][0];
     expect(args.parts[0].text).toBe("Build a game");
@@ -281,46 +282,17 @@ describe("ChatInput", () => {
 
     await waitFor(() => expect(client.session.promptAsync).toHaveBeenCalled());
     const args = client.session.promptAsync.mock.calls[0][0];
-    expect(args.parts[0].text).toContain(
-      "[BloxBot Skill Selected: bloxbot-playtest-debugging]",
-    );
+    expect(args.parts[0].text).toContain("[BloxBot Skill Selected: bloxbot-playtest-debugging]");
     expect(args.parts[0].text).toContain("native skill tool before doing any work");
     expect(args.parts[0].text).toContain("Fix the broken round");
-    expect(args.parts[1]).toMatchObject({ type: "file", mime: "image/png", filename: "evidence.png" });
+    expect(args.parts[1]).toMatchObject({
+      type: "file",
+      mime: "image/png",
+      filename: "evidence.png",
+    });
     expect(
       screen.queryByLabelText("Remove bloxbot-playtest-debugging skill"),
     ).not.toBeInTheDocument();
-  });
-
-  it("retries transient Studio discovery and activates it before a new chat", async () => {
-    const client = createClient();
-    let studioDiscoveryCalls = 0;
-    vi.mocked(invoke).mockImplementation(async (command: string) => {
-      if (command === "list_roblox_studios") {
-        studioDiscoveryCalls += 1;
-        return studioDiscoveryCalls === 1
-          ? []
-          : [{ id: "studio-1", name: "Connected Place", active: true }];
-      }
-      return undefined;
-    });
-    const qc = createQueryClient();
-
-    render(<TestChatInput client={client} queryClient={qc} />);
-
-    const textarea = await screen.findByPlaceholderText("Describe what you want to build...");
-    fireEvent.change(textarea, { target: { value: "Inspect the game" } });
-    fireEvent.click(screen.getByTitle("Send"));
-
-    await waitFor(() => expect(client.session.promptAsync).toHaveBeenCalled());
-    expect(studioDiscoveryCalls).toBe(2);
-    expect(invoke).toHaveBeenCalledWith("set_active_roblox_studio", {
-      studioId: "studio-1",
-    });
-    const args = client.session.promptAsync.mock.calls[0][0];
-    expect(args.parts[0].text).toContain("[Studio Target Already Active: studio-1]");
-    expect(args.parts[0].text).toContain("verified and activated this Studio");
-    expect(args.parts[0].text).toContain("Inspect the game");
   });
 
   it("sends message on Enter key (without Shift)", async () => {
