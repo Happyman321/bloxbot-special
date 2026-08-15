@@ -1,20 +1,22 @@
 import { useRef, useState } from "react";
 
+import BotCompanion from "@/components/BotCompanion";
 import Chat from "@/components/Chat";
 import DictatorMode from "@/components/DictatorMode";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import ImageMode from "@/components/ImageMode";
 import { Toaster } from "@/components/ui/sonner";
 import { ActiveSessionProvider } from "@/providers/ActiveSessionProvider";
-import { OpenCodeClientProvider } from "@/providers/OpenCodeClientProvider";
+import { OpenCodeClientProvider, useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 import { PreferencesProvider } from "@/providers/PreferencesProvider";
 import { QueryProvider } from "@/providers/QueryProvider";
 
 function AppInner() {
   const [mode, setMode] = useState<"chat" | "image" | "dictator">("chat");
+  const { ready, startupTransitionComplete = true } = useOpenCodeClient();
 
   return (
-    <main className="flex h-full flex-col overflow-hidden">
+    <main className="relative flex h-full flex-col overflow-hidden">
       <div
         className="flex h-9 shrink-0 items-center justify-between border-b bg-card px-3"
         data-tauri-drag-region
@@ -61,6 +63,7 @@ function AppInner() {
       <ErrorBoundary>
         {mode === "chat" ? <Chat /> : mode === "image" ? <ImageMode /> : <DictatorMode />}
       </ErrorBoundary>
+      <BotCompanion mode={mode} suppressed={!ready || !startupTransitionComplete} />
       <Toaster />
     </main>
   );

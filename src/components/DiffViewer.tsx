@@ -11,10 +11,10 @@ interface DiffViewerProps {
 function KindPill({ kind }: { kind: ChangeKind }) {
   const palette =
     kind === "add"
-      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+      ? "bg-success-surface text-success-foreground"
       : kind === "delete"
-        ? "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300"
-        : "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300";
+        ? "bg-danger-surface text-danger-foreground"
+        : "bg-info-surface text-info-foreground";
   const label = kind === "add" ? "Added" : kind === "delete" ? "Removed" : "Changed";
 
   return (
@@ -27,20 +27,20 @@ function KindPill({ kind }: { kind: ChangeKind }) {
 function ChangeIcon({ kind }: { kind: ChangeKind }) {
   if (kind === "add") {
     return (
-      <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-emerald-500/10 text-emerald-600">
+      <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-success-surface text-success-foreground">
         +
       </span>
     );
   }
   if (kind === "delete") {
     return (
-      <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-red-500/10 text-red-600">
+      <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-danger-surface text-danger-foreground">
         -
       </span>
     );
   }
   return (
-    <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-blue-500/10 text-blue-600">
+    <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-info-surface text-info-foreground">
       ~
     </span>
   );
@@ -49,8 +49,8 @@ function ChangeIcon({ kind }: { kind: ChangeKind }) {
 function DiffStats({ change }: { change: SessionChange }) {
   return (
     <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-      <span className="text-emerald-600">+{change.linesAdded}</span>
-      <span className="text-red-600">-{change.linesRemoved}</span>
+      <span className="text-success-foreground">+{change.linesAdded}</span>
+      <span className="text-danger-foreground">-{change.linesRemoved}</span>
     </span>
   );
 }
@@ -63,9 +63,9 @@ const ScriptDiffView = memo(function ScriptDiffView({ change }: { change: Sessio
           {change.diffLines.map((line, idx) => {
             const rowClass =
               line.type === "add"
-                ? "bg-emerald-50/70 dark:bg-emerald-950/30"
+                ? "bg-success-surface"
                 : line.type === "remove"
-                  ? "bg-red-50/70 dark:bg-red-950/30"
+                  ? "bg-danger-surface"
                   : "bg-transparent";
             const marker = line.type === "add" ? "+" : line.type === "remove" ? "-" : " ";
 
@@ -122,7 +122,7 @@ function DiffViewer({ changes, open, onClose }: DiffViewerProps) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-40 flex bg-black/45">
+    <div data-companion-blocking="true" className="fixed inset-0 z-40 flex bg-black/45">
       <button
         type="button"
         onClick={onClose}
@@ -171,7 +171,7 @@ function DiffViewer({ changes, open, onClose }: DiffViewerProps) {
                       onClick={() => setSelectedKey(change.key)}
                       className={`mb-1 w-full rounded-md border px-2 py-1.5 text-left transition-colors ${
                         active
-                          ? "border-blue-300 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/40"
+                          ? "border-info-border bg-info-surface"
                           : "border-transparent hover:border-stone-200 hover:bg-accent"
                       }`}
                     >

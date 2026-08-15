@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useAbort } from "@/hooks/mutations/useAbort";
 import { useSendMessage } from "@/hooks/mutations/useSendMessage";
 import { useAgents } from "@/hooks/useAgents";
+import { useCompanionSafeOffset } from "@/hooks/useCompanionSafeOffset";
 import { useAllModels, useConnectedProviders } from "@/hooks/useProviders";
 import { useIsBusy } from "@/hooks/useSessionStatuses";
 import { type SkillSummary, useBloxbotSkills } from "@/lib/skills";
@@ -124,6 +125,7 @@ const LightboxOverlay = memo(function LightboxOverlay({
 
   return (
     <div
+      data-companion-blocking="true"
       className="animate-lightbox-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm"
       onClick={onClose}
     >
@@ -317,6 +319,7 @@ function ChatInput() {
   const [isListening, setIsListening] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const companionOffsetRef = useCompanionSafeOffset("--companion-chat-offset");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const modelSearchRef = useRef<HTMLInputElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
@@ -765,7 +768,7 @@ function ChatInput() {
   function statusBadge(status?: string) {
     if (status === "beta")
       return (
-        <span className="shrink-0 rounded bg-amber-100 px-1 text-[9px] font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+        <span className="shrink-0 rounded bg-warning-surface px-1 text-[9px] font-medium text-warning-foreground">
           beta
         </span>
       );
@@ -814,7 +817,7 @@ function ChatInput() {
   }
 
   return (
-    <div className="shrink-0 border-t bg-card px-4 py-3">
+    <div ref={companionOffsetRef} className="shrink-0 border-t bg-card px-4 py-3">
       <div className="relative mb-2 flex items-center gap-1">
         <div className="relative" ref={modelPickerRef}>
           <button
@@ -973,7 +976,16 @@ function ChatInput() {
             className="flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             title="Choose a skill for this message"
           >
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4" />
               <circle cx="12" cy="12" r="3" />
             </svg>
@@ -1060,7 +1072,7 @@ function ChatInput() {
                   <span className="flex w-full items-center gap-1 truncate">
                     <span className="truncate">{studio.name}</span>
                     {studio.active && (
-                      <span className="shrink-0 rounded bg-emerald-100 px-1 text-[9px] font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+                      <span className="shrink-0 rounded bg-success-surface px-1 text-[9px] font-medium text-success-foreground">
                         active
                       </span>
                     )}
@@ -1138,7 +1150,7 @@ function ChatInput() {
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
-        className={`rounded-xl border bg-background transition-shadow focus-within:ring-2 ring-ring/20 ${isDragging ? "border-blue-300 bg-blue-50/30 ring-2 ring-blue-400 dark:border-blue-800 dark:bg-blue-950/30" : ""}`}
+        className={`rounded-xl border bg-background transition-shadow focus-within:ring-2 ring-ring/20 ${isDragging ? "border-info-border bg-info-surface ring-2 ring-info-border" : ""}`}
       >
         {selectedSkill && (
           <div className="flex px-3 pt-2">
@@ -1201,7 +1213,7 @@ function ChatInput() {
         <div className="flex items-start gap-1 px-3 py-2">
           <button
             onClick={() => fileInputRef.current?.click()}
-            className={`mt-0.5 shrink-0 p-0.5 transition-colors hover:text-foreground ${rejectShake ? "animate-reject-shake text-red-500" : "text-muted-foreground/60"}`}
+            className={`mt-0.5 shrink-0 p-0.5 transition-colors hover:text-foreground ${rejectShake ? "animate-reject-shake text-danger-foreground" : "text-muted-foreground/60"}`}
             title="Attach images"
           >
             <svg
@@ -1220,7 +1232,7 @@ function ChatInput() {
           <button
             onClick={handleMicClick}
             disabled={!speechSupported}
-            className={`mt-0.5 shrink-0 p-0.5 transition-colors ${isListening ? "text-red-500" : "text-muted-foreground/60 hover:text-foreground"} disabled:cursor-not-allowed disabled:opacity-30`}
+            className={`mt-0.5 shrink-0 p-0.5 transition-colors ${isListening ? "text-danger-foreground" : "text-muted-foreground/60 hover:text-foreground"} disabled:cursor-not-allowed disabled:opacity-30`}
             title={isListening ? "Stop voice input" : "Voice input"}
           >
             <svg

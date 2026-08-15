@@ -20,6 +20,8 @@ import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
 
+import BotFace from "@/components/BotFace";
+
 /** Module-level constant to avoid creating a new array on every render. */
 const REMARK_PLUGINS = [remarkGfm];
 
@@ -114,6 +116,7 @@ const ImageLightbox = memo(function ImageLightbox() {
 
   return (
     <div
+      data-companion-blocking="true"
       className="animate-lightbox-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm"
       onClick={() => setState(null)}
     >
@@ -198,49 +201,13 @@ const ImageLightbox = memo(function ImageLightbox() {
 function BloxBotThinking({ label = "Thinking..." }: { label?: string }) {
   return (
     <div className="flex items-center gap-2 py-0.5">
-      <svg
-        width="20"
-        height="20"
-        viewBox="0 0 512 512"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        className="bloxbot-face-think shrink-0"
-        aria-hidden="true"
-      >
-        <rect
-          x="32"
-          y="32"
-          width="448"
-          height="448"
-          rx="112"
-          fill="currentColor"
-          className="text-foreground"
-        />
-        <rect
-          className="bloxbot-eye"
-          x="144"
-          y="176"
-          width="72"
-          height="72"
-          rx="24"
-          fill="var(--background)"
-        />
-        <rect
-          className="bloxbot-eye"
-          x="296"
-          y="176"
-          width="72"
-          height="72"
-          rx="24"
-          fill="var(--background)"
-        />
-        <path
-          d="M168 328C168 328 204.8 376 256 376C307.2 376 344 328 344 328"
-          stroke="var(--background)"
-          strokeWidth="32"
-          strokeLinecap="round"
-        />
-      </svg>
+      <BotFace
+        mood="thinking"
+        accessory="none"
+        size={20}
+        showAccessory={false}
+        className="shrink-0"
+      />
       <span className="text-xs text-muted-foreground">{label}</span>
       <span className="flex gap-0.5">
         <span className="bloxbot-dot h-1 w-1 rounded-full bg-foreground/20" />
@@ -255,9 +222,9 @@ function BloxBotThinking({ label = "Thinking..." }: { label?: string }) {
 
 const TOOL_STATUS_COLORS: Record<string, string> = {
   pending: "border-border bg-muted/50",
-  running: "border-amber-200 bg-amber-50/30 dark:border-amber-800 dark:bg-amber-950/30",
+  running: "border-warning-border bg-warning-surface",
   completed: "border-border bg-card",
-  error: "border-red-200 bg-red-50/30 dark:border-red-900 dark:bg-red-950/30",
+  error: "border-danger-border bg-danger-surface",
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -337,8 +304,8 @@ const BashToolView = memo(function BashToolView({
         </details>
       )}
       {status === "running" && (
-        <div className="mt-1 flex items-center gap-1.5 text-[10px] text-amber-600">
-          <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-amber-400" />
+        <div className="mt-1 flex items-center gap-1.5 text-[10px] text-warning-foreground">
+          <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-warning-border" />
           Running...
         </div>
       )}
@@ -352,28 +319,32 @@ const DiffBlock = memo(function DiffBlock({ oldStr, newStr }: { oldStr: string; 
   return (
     <div className="mt-1.5 overflow-hidden rounded border text-[11px]">
       {oldLines.length > 0 && (
-        <div className="border-b bg-red-50 px-2.5 py-1 font-mono dark:bg-red-950/40">
+        <div className="border-b bg-danger-surface px-2.5 py-1 font-mono">
           {oldLines.slice(0, 20).map((line, i) => (
-            <div key={i} className="text-red-700 dark:text-red-300">
-              <span className="mr-2 select-none text-red-400">-</span>
+            <div key={i} className="text-danger-foreground">
+              <span className="mr-2 select-none text-danger-foreground/70">-</span>
               {line}
             </div>
           ))}
           {oldLines.length > 20 && (
-            <div className="text-[10px] text-red-400">...{oldLines.length - 20} more lines</div>
+            <div className="text-[10px] text-danger-foreground/70">
+              ...{oldLines.length - 20} more lines
+            </div>
           )}
         </div>
       )}
       {newLines.length > 0 && (
-        <div className="bg-emerald-50 px-2.5 py-1 font-mono dark:bg-emerald-950/40">
+        <div className="bg-success-surface px-2.5 py-1 font-mono">
           {newLines.slice(0, 20).map((line, i) => (
-            <div key={i} className="text-emerald-700 dark:text-emerald-300">
-              <span className="mr-2 select-none text-emerald-400">+</span>
+            <div key={i} className="text-success-foreground">
+              <span className="mr-2 select-none text-success-foreground/70">+</span>
               {line}
             </div>
           ))}
           {newLines.length > 20 && (
-            <div className="text-[10px] text-emerald-400">...{newLines.length - 20} more lines</div>
+            <div className="text-[10px] text-success-foreground/70">
+              ...{newLines.length - 20} more lines
+            </div>
           )}
         </div>
       )}
@@ -416,7 +387,7 @@ const EditToolView = memo(function EditToolView({
       </div>
       {(oldStr || newStr) && <DiffBlock oldStr={oldStr} newStr={newStr} />}
       {status === "completed" && output && (
-        <div className="mt-1 text-[10px] text-emerald-600">{output}</div>
+        <div className="mt-1 text-[10px] text-success-foreground">{output}</div>
       )}
     </div>
   );
@@ -451,7 +422,7 @@ const ReadToolView = memo(function ReadToolView({
         {shortPath}
       </span>
       {status === "running" && (
-        <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-amber-400" />
+        <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-warning-border" />
       )}
     </div>
   );
@@ -477,7 +448,7 @@ const WriteToolView = memo(function WriteToolView({
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
-        className="text-emerald-600"
+        className="text-success-foreground"
       >
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
         <polyline points="14 2 14 8 20 8" />
@@ -488,7 +459,7 @@ const WriteToolView = memo(function WriteToolView({
         {shortPath}
       </span>
       {status === "running" && (
-        <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-amber-400" />
+        <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-warning-border" />
       )}
     </div>
   );
@@ -520,7 +491,7 @@ const GlobToolView = memo(function GlobToolView({
       </svg>
       <span className="font-mono text-muted-foreground">{pattern}</span>
       {status === "running" && (
-        <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-amber-400" />
+        <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-warning-border" />
       )}
     </div>
   );
@@ -555,7 +526,7 @@ const GrepToolView = memo(function GrepToolView({
         /{pattern}/{include ? ` in ${include}` : ""}
       </span>
       {status === "running" && (
-        <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-amber-400" />
+        <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-warning-border" />
       )}
     </div>
   );
@@ -635,7 +606,7 @@ const WebFetchToolView = memo(function WebFetchToolView({
         {displayUrl}
       </span>
       {status === "running" && (
-        <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-amber-400" />
+        <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-warning-border" />
       )}
     </div>
   );
@@ -664,12 +635,12 @@ const TodoWriteToolView = memo(function TodoWriteToolView({
                 strokeWidth="2.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                className="text-emerald-500"
+                className="text-success-foreground"
               >
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             ) : todo.status === "in_progress" ? (
-              <span className="inline-block h-2.5 w-2.5 animate-pulse rounded-full border-2 border-amber-400" />
+              <span className="inline-block h-2.5 w-2.5 animate-pulse rounded-full border-2 border-warning-border" />
             ) : todo.status === "cancelled" ? (
               <svg
                 width="11"
@@ -725,7 +696,7 @@ const DefaultToolView = memo(function DefaultToolView({
         <span className="font-semibold text-muted-foreground">{tool}</span>
         {title && <span className="text-muted-foreground">- {title}</span>}
         {status === "running" && (
-          <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-amber-400" />
+          <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-warning-border" />
         )}
       </div>
       {status === "completed" && output && (
@@ -781,7 +752,7 @@ const markdownComponents: Components = {
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-blue-600 underline decoration-blue-300 underline-offset-2 hover:text-blue-800 hover:decoration-blue-500"
+        className="text-info-foreground underline decoration-info-border underline-offset-2 hover:opacity-80"
       >
         {children}
       </a>
@@ -979,7 +950,7 @@ const ToolPartView = memo(function ToolPartView({
         )}
       {renderToolContent()}
       {errorMsg && (
-        <div className="mt-1.5 rounded bg-red-50 px-2 py-1 text-[11px] text-red-700 dark:bg-red-950/40 dark:text-red-300">
+        <div className="mt-1.5 rounded bg-danger-surface px-2 py-1 text-[11px] text-danger-foreground">
           {errorMsg}
         </div>
       )}
@@ -1014,7 +985,7 @@ const RetryPartView = memo(function RetryPartView({
   part: Extract<Part, { type: "retry" }>;
 }) {
   return (
-    <div className="my-1 flex items-center gap-1.5 rounded border border-amber-200 bg-amber-50/30 px-2.5 py-1.5 text-[11px] text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+    <div className="my-1 flex items-center gap-1.5 rounded border border-warning-border bg-warning-surface px-2.5 py-1.5 text-[11px] text-warning-foreground">
       <svg
         width="10"
         height="10"
@@ -1030,7 +1001,10 @@ const RetryPartView = memo(function RetryPartView({
       </svg>
       Retrying (attempt {part.attempt})
       {"error" in part && part.error?.data && "message" in part.error.data && (
-        <span className="text-[10px] text-amber-600"> - {String(part.error.data.message)}</span>
+        <span className="text-[10px] text-warning-foreground">
+          {" "}
+          - {String(part.error.data.message)}
+        </span>
       )}
     </div>
   );
@@ -1099,7 +1073,7 @@ const TodoPanel = memo(function TodoPanel({ todos }: { todos: Todo[] }) {
       </div>
       <div className="h-1 overflow-hidden rounded-full bg-muted">
         <div
-          className="h-full rounded-full bg-emerald-500 transition-all duration-300"
+          className="h-full rounded-full bg-success-border transition-all duration-300"
           style={{ width: `${total > 0 ? (completed / total) * 100 : 0}%` }}
         />
       </div>
@@ -1117,12 +1091,12 @@ const TodoPanel = memo(function TodoPanel({ todos }: { todos: Todo[] }) {
                   strokeWidth="2.5"
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  className="text-emerald-500"
+                  className="text-success-foreground"
                 >
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
               ) : todo.status === "in_progress" ? (
-                <span className="inline-block h-2.5 w-2.5 animate-pulse rounded-full border-2 border-amber-400" />
+                <span className="inline-block h-2.5 w-2.5 animate-pulse rounded-full border-2 border-warning-border" />
               ) : todo.status === "cancelled" ? (
                 <svg
                   width="11"
@@ -1379,7 +1353,7 @@ const MessageBubble = memo(function MessageBubble({
             {messageError && (
               <div
                 role="alert"
-                className="mt-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+                className="mt-1 rounded-lg border border-danger-border bg-danger-surface px-3 py-2 text-xs text-danger-foreground"
               >
                 <div className="font-semibold">Model request failed</div>
                 <div className="mt-0.5 break-words">{messageError}</div>
@@ -1396,7 +1370,7 @@ const ChatErrorNotice = memo(function ChatErrorNotice({ message }: { message: st
   return (
     <div
       role="alert"
-      className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+      className="rounded-lg border border-danger-border bg-danger-surface px-3 py-2 text-xs text-danger-foreground"
     >
       <div className="font-semibold">Message could not be sent</div>
       <div className="mt-0.5 break-words">{message}</div>

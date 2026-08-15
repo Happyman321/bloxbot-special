@@ -1,4 +1,10 @@
 import { LazyStore } from "@tauri-apps/plugin-store";
+import {
+  type CompanionPreferences,
+  DEFAULT_COMPANION_PREFERENCES,
+  normalizeCompanionPreferences,
+} from "@/lib/companion";
+import { DEFAULT_THEME_ID, normalizeThemeId, type ThemeId } from "@/lib/themes";
 
 export type WorkspaceType = "standard" | "vscode";
 
@@ -13,7 +19,8 @@ export interface WorkspaceSettings {
 export interface AppConfig {
   lastModel: string | null;
   hiddenModels: string[];
-  theme: "light" | "dark";
+  theme: ThemeId;
+  companion: CompanionPreferences;
   folders: string[];
   sessionFolderById: Record<string, string>;
   favoriteSessionIdsByWorkspace: Record<string, string[]>;
@@ -36,7 +43,8 @@ export const DEFAULT_WORKSPACE_SETTINGS: WorkspaceSettings = {
 const DEFAULT_CONFIG: AppConfig = {
   lastModel: null,
   hiddenModels: [],
-  theme: "light",
+  theme: DEFAULT_THEME_ID,
+  companion: DEFAULT_COMPANION_PREFERENCES,
   folders: [],
   sessionFolderById: {},
   favoriteSessionIdsByWorkspace: {},
@@ -68,7 +76,9 @@ function normalizeWorkspaceSettings(
 
 export async function loadConfig(): Promise<AppConfig> {
   try {
-    const raw = await store.get<AppConfig>(CONFIG_KEY);
+    const raw = await store.get<Partial<AppConfig> & { theme?: unknown; companion?: unknown }>(
+      CONFIG_KEY,
+    );
     if (raw) {
       const folders = raw.folders ?? [];
       const legacyInstructions = raw.folderInstructionsByName ?? {};
@@ -91,7 +101,8 @@ export async function loadConfig(): Promise<AppConfig> {
         sessionFolderById: raw.sessionFolderById ?? {},
         favoriteSessionIdsByWorkspace: raw.favoriteSessionIdsByWorkspace ?? {},
         activeWorkspace: raw.activeWorkspace ?? "all",
-        theme: raw.theme ?? "light",
+        theme: normalizeThemeId(raw.theme),
+        companion: normalizeCompanionPreferences(raw.companion),
         folderOpenState: raw.folderOpenState ?? {},
         folderInstructionsByName: legacyInstructions,
         workspaceSettingsByName,

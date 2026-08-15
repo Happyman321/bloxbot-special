@@ -2,6 +2,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import type { ClipboardEvent } from "react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { useCompanionSafeOffset } from "@/hooks/useCompanionSafeOffset";
 import {
   useAddImageGeneration,
   useCreateImageProject,
@@ -599,6 +600,7 @@ function ImageMode() {
   const deleteProject = useDeleteImageProject();
   const renameProject = useRenameImageProject();
   const addGeneration = useAddImageGeneration();
+  const companionOffsetRef = useCompanionSafeOffset("--companion-image-offset");
 
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [draftKey, setDraftKey] = useState("");
@@ -892,7 +894,7 @@ function ImageMode() {
           >
             {activeProject?.title ?? "OpenRouter image generation"}
           </button>
-          <div className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
+          <div className="rounded-md border border-info-border bg-info-surface px-2 py-1 text-[11px] text-info-foreground">
             OpenRouter credits are used for generations
           </div>
         </div>
@@ -976,7 +978,7 @@ function ImageMode() {
                         {turn.status === "pending" && (
                           <div className="mt-3 rounded-lg border bg-background/70 p-3">
                             <div className="flex items-center gap-2 text-xs font-medium">
-                              <span className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
+                              <span className="h-2 w-2 animate-pulse rounded-full bg-info-border" />
                               Generating image
                             </div>
                             <div className="mt-1 text-[11px] text-muted-foreground">
@@ -1047,7 +1049,7 @@ function ImageMode() {
                         <div
                           className={`mt-3 rounded-md border px-2 py-1.5 text-xs ${
                             turn.status === "failed"
-                              ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+                              ? "border-danger-border bg-danger-surface text-danger-foreground"
                               : "bg-background/70 text-muted-foreground"
                           }`}
                         >
@@ -1060,7 +1062,7 @@ function ImageMode() {
               )}
             </div>
 
-            <div className="shrink-0 border-t bg-card p-4">
+            <div ref={companionOffsetRef} className="shrink-0 border-t bg-card p-4">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -1210,6 +1212,7 @@ function ImageMode() {
       />
       {previewImage && (
         <div
+          data-companion-blocking="true"
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
           role="dialog"
           aria-modal="true"

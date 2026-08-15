@@ -41,7 +41,7 @@ function statusDot(status?: { type: string }): string {
   if (!status) return "bg-stone-300";
   switch (status.type) {
     case "busy":
-      return "bg-amber-400 animate-pulse";
+      return "bg-warning-border animate-pulse";
     case "idle":
       return "bg-stone-300";
     default:
@@ -669,7 +669,10 @@ const ChatSidebar = memo(function ChatSidebar({
           </div>
 
           {settingsWorkspaceName && (
-            <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/35 px-4">
+            <div
+              data-companion-blocking="true"
+              className="fixed inset-0 z-[120] flex items-center justify-center bg-black/35 px-4"
+            >
               <div className="w-full max-w-md rounded-lg border bg-background shadow-2xl">
                 <div className="flex h-11 items-center justify-between border-b px-4">
                   <div>
