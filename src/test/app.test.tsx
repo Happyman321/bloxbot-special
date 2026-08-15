@@ -238,6 +238,9 @@ describe("User journeys", () => {
     await waitFor(() => {
       expect(screen.getByPlaceholderText("Describe what you want to build...")).toBeInTheDocument();
     });
+    expect(
+      screen.getByText("Studio not detected? If Studio is connected, tell BloxBot to try again."),
+    ).toBeInTheDocument();
   });
 
   it("auto-assigns a newly created session to the active workspace folder", async () => {
