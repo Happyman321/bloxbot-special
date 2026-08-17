@@ -1452,6 +1452,7 @@ function ChatMessages({ sessionId }: { sessionId?: string | null }) {
     lastScrollTop.current = containerRef.current?.scrollTop ?? 0;
   }, [resolvedSessionId]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reattach when the message area mounts
   useEffect(() => {
     const el = containerRef.current;
     const anchor = bottomRef.current;
@@ -1462,7 +1463,9 @@ function ChatMessages({ sessionId }: { sessionId?: string | null }) {
       if (!rafId) {
         rafId = requestAnimationFrame(() => {
           rafId = 0;
-          anchor.scrollIntoView({ behavior: "instant" });
+          if (shouldAutoScroll.current) {
+            anchor.scrollIntoView({ behavior: "instant" });
+          }
         });
       }
     });
@@ -1471,7 +1474,7 @@ function ChatMessages({ sessionId }: { sessionId?: string | null }) {
       observer.disconnect();
       cancelAnimationFrame(rafId);
     };
-  }, []);
+  }, [messageIds.length]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional scroll triggers
   useEffect(() => {

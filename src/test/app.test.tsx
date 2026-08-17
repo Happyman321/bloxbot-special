@@ -374,7 +374,13 @@ describe("User journeys", () => {
 
     const scrollIntoView = vi.spyOn(Element.prototype, "scrollIntoView");
     scrollIntoView.mockClear();
-    fireEvent.wheel(chatScroller as Element, { deltaY: -100 });
+    let pendingAutoScroll: FrameRequestCallback | undefined;
+    const requestAnimationFrame = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((callback) => {
+        pendingAutoScroll = callback;
+        return 1;
+      });
 
     act(() => {
       sseDispatch(
@@ -398,8 +404,14 @@ describe("User journeys", () => {
 
     await waitFor(() => {
       expect(screen.getByText(/More streaming text/)).toBeInTheDocument();
+      expect(pendingAutoScroll).toBeDefined();
     });
+
+    fireEvent.wheel(chatScroller as Element, { deltaY: -100 });
+    act(() => pendingAutoScroll?.(performance.now()));
+
     expect(scrollIntoView).not.toHaveBeenCalled();
+    requestAnimationFrame.mockRestore();
 
     await act(async () => {
       fireEvent.click(screen.getByTitle("Copy code"));
