@@ -115,6 +115,12 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/src-tauri/resources/nodejs/lib/node_modules"
           cp -R "${{ matrix.node_inner_dir }}/node_modules/npm" "$GITHUB_WORKSPACE/src-tauri/resources/nodejs/lib/node_modules/"
 
+      - name: Verify DevForum MCP with bundled Node.js
+        shell: bash
+        run: |
+          "$GITHUB_WORKSPACE/src-tauri/resources/nodejs/bin/node${{ matrix.ext }}" \
+            "$GITHUB_WORKSPACE/scripts/test-devforum-mcp.mjs"
+
       # ── Download OpenCode sidecar ─────────────────────────────────────
 
       - name: Build patched OpenCode sidecar

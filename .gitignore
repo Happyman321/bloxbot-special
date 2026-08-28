@@ -27,6 +27,9 @@ src-tauri/resources/mcp-server/node_modules/
 src-tauri/resources/mcp-server/dist/
 src-tauri/resources/launcher/node_modules/
 src-tauri/resources/launcher/dist/
+src-tauri/resources/devforum-mcp/server.mjs
+src-tauri/resources/devforum-mcp/LICENSE
+src-tauri/resources/devforum-mcp/licenses/
 src-tauri/binaries/opencode*
 src-tauri/binaries/*.exe
 src-tauri/binaries/*.zip

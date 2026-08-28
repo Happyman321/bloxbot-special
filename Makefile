@@ -45,6 +45,7 @@ endif
 NODEJS_BIN     := src-tauri/resources/nodejs/bin/node
 OPENCODE_BIN   := src-tauri/binaries/opencode-$(TARGET)
 NODE_MODULES   := node_modules/.pnpm
+DEVFORUM_MCP_SERVER := src-tauri/resources/devforum-mcp/server.mjs
 
 # ── Default target ───────────────────────────────────────────────────────
 .PHONY: build dev clean deps check lint help
@@ -81,13 +82,16 @@ nuke: clean ## Remove everything including downloaded deps
 	rm -f src-tauri/binaries/opencode-*
 	rm -rf node_modules
 
-deps: $(NODEJS_BIN) $(OPENCODE_BIN) ## Download Node.js + OpenCode sidecar
+deps: $(NODEJS_BIN) $(OPENCODE_BIN) $(DEVFORUM_MCP_SERVER) ## Download and build runtime dependencies
 
 # ── Frontend deps ────────────────────────────────────────────────────────
 
 $(NODE_MODULES): package.json pnpm-lock.yaml
 	pnpm install --frozen-lockfile
 	@touch $@
+
+$(DEVFORUM_MCP_SERVER): $(NODE_MODULES) scripts/build-devforum-mcp.mjs package.json pnpm-lock.yaml
+	pnpm build:devforum-mcp
 
 # ── Node.js runtime ─────────────────────────────────────────────────────
 

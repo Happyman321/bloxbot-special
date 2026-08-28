@@ -73,6 +73,11 @@ const TECHNOLOGIES = [
     url: "https://create.roblox.com/docs/studio/mcp",
     description: "Official Studio MCP server",
   },
+  {
+    name: "Roblox DevForum MCP",
+    url: "https://github.com/EL4CTEO/roblox-devforum-mcp",
+    description: "MIT-licensed current Roblox APIs, docs, bugs, and release notes",
+  },
 ];
 
 type SettingsTab = "providers" | "models" | "skills" | "appearance" | "usage" | "about";

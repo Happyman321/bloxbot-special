@@ -47,6 +47,7 @@
     ],
     "resources": [
       "resources/nodejs",
+      "resources/devforum-mcp",
       "resources/skills",
       "resources/vscode-mcp",
       "resources/vscode-extension"
