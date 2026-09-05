@@ -1,0 +1,78 @@
+diff --git a/packages/opencode/src/plugin/openai/codex.ts b/packages/opencode/src/plugin/openai/codex.ts
+index 2ae34ac..c99b625 100644
+--- a/packages/opencode/src/plugin/openai/codex.ts
++++ b/packages/opencode/src/plugin/openai/codex.ts
+@@ -12,7 +12,7 @@ const ISSUER = "https://auth.openai.com"
+ const CODEX_API_ENDPOINT = "https://chatgpt.com/backend-api/codex/responses"
+ const OAUTH_PORT = 1455
+ const OAUTH_POLLING_SAFETY_MARGIN_MS = 3000
+-const ALLOWED_MODELS = new Set(["gpt-5.5", "gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.4-mini"])
++const ALLOWED_MODELS = new Set(["gpt-6-astra", "gpt-5.5", "gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.4-mini"])
+ const DISALLOWED_MODELS = new Set(["gpt-5.5-pro"])
+ 
+ interface PkceCodes {
+diff --git a/packages/opencode/src/provider/transform.ts b/packages/opencode/src/provider/transform.ts
+index 89b9c88..f4914b0 100644
+--- a/packages/opencode/src/provider/transform.ts
++++ b/packages/opencode/src/provider/transform.ts
+@@ -626,6 +626,7 @@ function gpt5ChatReasoningEfforts(apiId: string) {
+ // to strongest.
+ function openaiReasoningEfforts(apiId: string, releaseDate: string) {
+   const id = apiId.toLowerCase()
++  if (/(?:^|\/)gpt-6-astra(?:-|$)/.test(id)) return [...WIDELY_SUPPORTED_EFFORTS, "xhigh", "max"]
+   if (id.includes("deep-research")) return ["medium"]
+   const chatEfforts = gpt5ChatReasoningEfforts(id)
+   if (chatEfforts) return chatEfforts
+@@ -645,6 +646,7 @@ function openaiReasoningEfforts(apiId: string, releaseDate: string) {
+ 
+ function openaiCompatibleReasoningEfforts(id: string) {
+   const apiId = id.toLowerCase()
++  if (/(?:^|\/)gpt-6-astra(?:-|$)/.test(apiId)) return [...WIDELY_SUPPORTED_EFFORTS, "xhigh", "max"]
+   const chatEfforts = gpt5ChatReasoningEfforts(apiId)
+   if (chatEfforts) return chatEfforts
+   if (GPT5_PRO_RE.test(apiId)) return OPENAI_GPT5_PRO_EFFORTS
+diff --git a/packages/opencode/test/plugin/codex.test.ts b/packages/opencode/test/plugin/codex.test.ts
+index fbc9df5..fba728c 100644
+--- a/packages/opencode/test/plugin/codex.test.ts
++++ b/packages/opencode/test/plugin/codex.test.ts
+@@ -289,7 +289,7 @@ describe("plugin.codex", () => {
+     const provider = {
+       models: {
+         ...Object.fromEntries(
+-          ["gpt-5.4", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.7-pro"].map((id) => [
++          ["gpt-6-astra", "gpt-5.4", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.7-pro"].map((id) => [
+             id,
+             { id, api: { id }, limit, cost: {}, options: {} },
+           ]),
+@@ -314,6 +314,8 @@ describe("plugin.codex", () => {
+     const models = await hooks.provider!.models!(provider as never, { auth: { type: "oauth" } } as never)
+ 
+     expect(models["gpt-5.4"]?.limit).toEqual(limit)
++    expect(models["gpt-6-astra"]?.limit).toEqual(limit)
++    expect(models["gpt-6-astra"]?.cost).toEqual({ input: 0, output: 0, cache: { read: 0, write: 0 } })
+     expect(models["gpt-5.5"]?.limit).toEqual({ context: 400_000, input: 272_000, output: 128_000 })
+     expect(models["gpt-5.6-sol"]?.limit).toEqual({ context: 400_000, input: 272_000, output: 128_000 })
+     expect(models["gpt-5.6-terra"]?.limit).toEqual({ context: 400_000, input: 272_000, output: 128_000 })
+diff --git a/packages/opencode/test/provider/transform.test.ts b/packages/opencode/test/provider/transform.test.ts
+index 9d76758..c113f49 100644
+--- a/packages/opencode/test/provider/transform.test.ts
++++ b/packages/opencode/test/provider/transform.test.ts
+@@ -4203,6 +4203,18 @@ describe("ProviderTransform.variants", () => {
+     expect(result).toEqual({})
+   })
+ 
++  test("Astra exposes only supported reasoning efforts without catalog metadata", () => {
++    for (const npm of ["@ai-sdk/openai", "@openrouter/ai-sdk-provider"]) {
++      const model = createMockModel({
++        id: "gpt-6-astra",
++        providerID: "openai",
++        api: { id: "openai/gpt-6-astra", url: "https://api.openai.com/v1", npm },
++        release_date: "2026-09-04",
++      })
++      expect(Object.keys(ProviderTransform.variants(model))).toEqual(["low", "medium", "high", "xhigh", "max"])
++    }
++  })
++
+   test("deepseek returns empty object", () => {
+     const model = createMockModel({
+       id: "deepseek/deepseek-chat",

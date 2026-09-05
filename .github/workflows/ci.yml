@@ -13,8 +13,8 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 env:
-  NODE_VERSION: "22.13.1"
-  OPENCODE_VERSION: "1.17.19"
+  NODE_VERSION: "22.23.2"
+  OPENCODE_VERSION: "1.18.27"
 
 jobs:
   build:
@@ -26,8 +26,8 @@ jobs:
         include:
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
-            node_asset: node-v22.13.1-win-x64.zip
-            node_inner_dir: node-v22.13.1-win-x64
+            node_asset: node-v22.23.2-win-x64.zip
+            node_inner_dir: node-v22.23.2-win-x64
             ext: ".exe"
             args: "--bundles nsis"
 
@@ -120,6 +120,8 @@ jobs:
         run: |
           "$GITHUB_WORKSPACE/src-tauri/resources/nodejs/bin/node${{ matrix.ext }}" \
             "$GITHUB_WORKSPACE/scripts/test-devforum-mcp.mjs"
+          "$GITHUB_WORKSPACE/src-tauri/resources/nodejs/bin/node${{ matrix.ext }}" \
+            "$GITHUB_WORKSPACE/scripts/test-vscode-mcp.mjs"
 
       # ── Download OpenCode sidecar ─────────────────────────────────────
 
@@ -129,6 +131,7 @@ jobs:
           source_dir="$RUNNER_TEMP/opencode"
           title_patch="$GITHUB_WORKSPACE/patches/opencode/${{ env.OPENCODE_VERSION }}-title-model-routing.patch"
           studio_patch="$GITHUB_WORKSPACE/patches/opencode/${{ env.OPENCODE_VERSION }}-studio-picker.patch"
+          astra_patch="$GITHUB_WORKSPACE/patches/opencode/${{ env.OPENCODE_VERSION }}-astra.patch"
           output_file="$GITHUB_WORKSPACE/src-tauri/binaries/opencode-${{ matrix.target }}${{ matrix.ext }}"
 
           git clone --depth 1 --branch "v${{ env.OPENCODE_VERSION }}" https://github.com/anomalyco/opencode.git "$source_dir"
@@ -136,11 +139,13 @@ jobs:
           git -C "$source_dir" apply "$title_patch"
           git -C "$source_dir" apply --check "$studio_patch"
           git -C "$source_dir" apply "$studio_patch"
+          git -C "$source_dir" apply --check "$astra_patch"
+          git -C "$source_dir" apply "$astra_patch"
 
           cd "$source_dir"
           bun install --frozen-lockfile
-          bun --cwd packages/opencode test test/plugin/codex.test.ts test/session/title-model-routing.test.ts test/server/httpapi-mcp-oauth.test.ts
-          OPENCODE_VERSION="${{ env.OPENCODE_VERSION }}" bun run --cwd packages/opencode build -- --single --skip-install
+          bun --cwd packages/opencode test test/plugin/codex.test.ts test/provider/transform.test.ts test/session/title-model-routing.test.ts test/server/httpapi-mcp-oauth.test.ts
+          OPENCODE_VERSION="${{ env.OPENCODE_VERSION }}" bun run --cwd packages/opencode build -- --single --skip-install --skip-embed-web-ui
 
           mkdir -p "$(dirname "$output_file")"
           cp "packages/opencode/dist/opencode-windows-x64/bin/opencode.exe" "$output_file"

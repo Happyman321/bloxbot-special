@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [string]$Version = "1.17.19",
+  [string]$Version = "1.18.27",
   [string]$BunPath = "bun",
   [string]$PythonPath = $env:PYTHON,
   [switch]$KeepSource
@@ -11,9 +11,15 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $patches = @(
   (Join-Path $repoRoot "patches\\opencode\\$Version-title-model-routing.patch"),
-  (Join-Path $repoRoot "patches\\opencode\\$Version-studio-picker.patch")
+  (Join-Path $repoRoot "patches\\opencode\\$Version-studio-picker.patch"),
+  (Join-Path $repoRoot "patches\\opencode\\$Version-astra.patch")
 )
 $source = Join-Path $env:TEMP "bloxbot-opencode-$Version"
+$tempRoot = [IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\'
+$source = [IO.Path]::GetFullPath($source)
+if ($Version -notmatch '^\d+\.\d+\.\d+$' -or !$source.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase)) {
+  throw "Invalid OpenCode version or temporary source path: $source"
+}
 $binary = Join-Path $repoRoot "src-tauri\\binaries\\opencode-x86_64-pc-windows-msvc.exe"
 $bunCommand = (Get-Command $BunPath -ErrorAction Stop).Source
 $bunDirectory = Split-Path -Parent $bunCommand
@@ -36,7 +42,7 @@ foreach ($patch in $patches) {
 }
 
 if (Test-Path $source) {
-  Remove-Item -Recurse -Force $source
+  Remove-Item -LiteralPath $source -Recurse -Force
 }
 
 git clone --depth 1 --branch "v$Version" https://github.com/anomalyco/opencode.git $source
@@ -53,9 +59,9 @@ try {
   $env:OPENCODE_VERSION = $Version
   & $bunCommand install --frozen-lockfile
   Assert-NativeSuccess "Installing OpenCode dependencies"
-  & $bunCommand --cwd packages/opencode test test/plugin/codex.test.ts test/session/title-model-routing.test.ts test/server/httpapi-mcp-oauth.test.ts
+  & $bunCommand --cwd packages/opencode test test/plugin/codex.test.ts test/provider/transform.test.ts test/session/title-model-routing.test.ts test/server/httpapi-mcp-oauth.test.ts
   Assert-NativeSuccess "Testing OpenCode OAuth models, title routing, and Studio picker bridge"
-  & $bunCommand run --cwd packages/opencode build -- --single --skip-install
+  & $bunCommand run --cwd packages/opencode build -- --single --skip-install --skip-embed-web-ui
   Assert-NativeSuccess "Building the OpenCode Windows x64 sidecar"
 
   $built = Join-Path $source "packages\\opencode\\dist\\opencode-windows-x64\\bin\\opencode.exe"
@@ -73,6 +79,6 @@ try {
 } finally {
   Pop-Location
   if (!$KeepSource -and (Test-Path $source)) {
-    Remove-Item -Recurse -Force $source
+    Remove-Item -LiteralPath $source -Recurse -Force
   }
 }

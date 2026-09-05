@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { build } from "esbuild";
 
-const EXPECTED_VERSION = "1.0.2";
+const EXPECTED_VERSION = "1.2.6";
 const require = createRequire(import.meta.url);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const entryPath = require.resolve("roblox-devforum-mcp");

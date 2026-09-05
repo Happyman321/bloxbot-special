@@ -16,20 +16,12 @@ process.stdin.on("data", (chunk) => {
 
 function drainInput() {
   while (true) {
-    const headerEnd = inputBuffer.indexOf("\r\n\r\n");
-    if (headerEnd < 0) return;
-    const header = inputBuffer.slice(0, headerEnd).toString("utf8");
-    const match = header.match(/content-length:\s*(\d+)/i);
-    if (!match) {
-      inputBuffer = inputBuffer.slice(headerEnd + 4);
-      continue;
-    }
-    const length = Number(match[1]);
-    const bodyStart = headerEnd + 4;
-    const bodyEnd = bodyStart + length;
-    if (inputBuffer.length < bodyEnd) return;
-    const body = inputBuffer.slice(bodyStart, bodyEnd).toString("utf8");
-    inputBuffer = inputBuffer.slice(bodyEnd);
+    // MCP stdio uses one JSON message per line, including notifications.
+    const end = inputBuffer.indexOf("\n");
+    if (end < 0) return;
+    const body = inputBuffer.subarray(0, end).toString("utf8").trim();
+    inputBuffer = inputBuffer.subarray(end + 1);
+    if (!body) continue;
     handleMessage(body).catch((error) => {
       log(`Unhandled message error: ${error.stack || error}`);
     });
@@ -38,7 +30,7 @@ function drainInput() {
 
 async function handleMessage(raw) {
   const message = JSON.parse(raw);
-  if (!message.id) return;
+  if (message.id === undefined || message.id === null) return;
 
   try {
     if (message.method === "initialize") {
@@ -81,9 +73,7 @@ async function handleMessage(raw) {
 }
 
 function send(payload) {
-  const body = Buffer.from(JSON.stringify(payload), "utf8");
-  process.stdout.write(`Content-Length: ${body.length}\r\n\r\n`);
-  process.stdout.write(body);
+  process.stdout.write(`${JSON.stringify(payload)}\n`);
 }
 
 function log(message) {
