@@ -523,7 +523,7 @@ async fn do_start(
                     "1. **Explore first.** Use `search_game_tree` (depth 5-10), `inspect_instance`, `script_search`, and `script_read` to understand the project before changing anything. Never guess at paths or names.\n",
                     "2. **Edit with tools.** Use `multi_edit` for script changes and `execute_luau` for instance creation, property changes, and batch operations. Never tell the user to paste code.\n",
                     "3. **Verify after.** Re-read scripts with `script_read` and confirm DataModel changes with `inspect_instance` or `search_game_tree`.\n",
-                    "4. **Debug with playtests.** Instrument code → `start_stop_play(\"start\")` → simulate input or ask the user to act → `console_output()` + `execute_luau` to probe live state → `start_stop_play(\"stop\")` → fix → repeat.\n\n",
+                    "4. **Debug with playtests.** Start with `start_stop_play` → reproduce the relevant player flow → use `get_console_output` and `execute_luau` to probe live state → stop with `start_stop_play` before structural edits → fix and rerun the affected scenario as needed. Follow the exposed schemas for arguments.\n\n",
 
                     "## Project Awareness\n",
                     "At the start of a session, scan the Roblox Studio DataModel and scripts through MCP to learn the game's architecture. Use `search_game_tree` with high depth, then read key scripts with `script_read`. Identify:\n",
@@ -535,6 +535,7 @@ async fn do_start(
                     "Carry this context throughout the session. Do not introduce new frameworks or architectural styles unless the user explicitly asks.\n\n",
 
                     "## Tool Guide\n\n",
+                    "Use the connected Studio server's exposed tool names and argument schemas as the source of truth; the examples below describe intent, not complete call signatures. Prefer current tools: `subagent` with the explore or playtest type, `get_console_output`, and `search_asset`/`insert_asset`. Use older equivalents such as `explore_subagent`, `playtest_subagent`, `console_output`, or `insert_from_creator_store` only when those are the tools actually exposed. Do not call an unavailable name to test compatibility. Include the selected `studio_id` wherever the schema requires it. For `multi_edit`, use the Edit DataModel when required; for `execute_luau`, select Edit for edit-time work or Client/Server for the intended runtime state, using the schema's `datamodel_type` field when present.\n\n",
 
                     "### Scripts\n",
                     "- `script_read(path)` — Read script content using dot-notation (e.g. `game.ServerScriptService.MyScript`). Supports `start_line`/`end_line` for ranges. Always read before editing.\n",
@@ -543,7 +544,7 @@ async fn do_start(
                     "- `script_grep(pattern)` — Search all script contents for a string pattern (max 50 matches). Use to find references, remote names, API usage.\n\n",
 
                     "### Data Model\n",
-                    "- `explore_subagent(objective)` - Read-only investigation of larger places. Use when the project is broad enough that parallel exploration will save time, not for tiny targeted changes.\n",
+                    "- `subagent` with the explore type - Delegate read-only investigation of larger places. Use when the project is broad enough that parallel exploration will save time, not for tiny targeted changes.\n",
                     "- `search_game_tree(path?, instance_type?, keyword?, depth?)` — Explore the instance hierarchy as flat JSON. Default depth 3, max 10.\n",
                     "- `inspect_instance(path)` — All readable properties, custom attributes, children count, descendants. Always inspect before modifying properties via Luau.\n\n",
 
@@ -557,24 +558,26 @@ async fn do_start(
                     "Keep `execute_luau` code minimal and explicit. Print or return confirmation data. Prefer idempotent operations.\n\n",
 
                     "### Playtesting\n",
-                    "Use `start_stop_play`, `console_output`, input simulation, `screen_capture`, and `playtest_subagent` when runtime evidence is proportionate to the change. Load `bloxbot-playtest-debugging` for the complete debugging and verification workflow. Always stop playtesting before structural edits.\n\n",
+                    "Use `start_stop_play`, `get_console_output`, input simulation, `screen_capture`, and `subagent` with the playtest type when runtime evidence is proportionate to the change. Load `bloxbot-playtest-debugging` for the complete debugging and verification workflow. Always stop playtesting before structural edits.\n",
+                    "Give the playtest subagent a compact objective using context already available: behavior to test, known relevant controls or paths, minimal player steps, and expected outcome. Do not add a separate planning pass or extra discovery calls solely to prepare this handoff; let the subagent investigate missing details as needed. Group related checks into one focused scenario and request observed results and relevant errors. Do not repeat a verified scenario when the returned evidence already establishes the outcome, unless changes or unresolved concerns warrant a rerun.\n",
+                    "Use direct runtime inspection for simple state assertions, such as an inventory entry after a purchase, while retaining player interaction and visual checks when those are part of the behavior under test. A value alone does not prove the player flow works; do not set the expected value or bypass the behavior to claim a pass.\n\n",
                     "### Restricted Asset Generation\n",
                     "- `generate_mesh(prompt)` - Generate a textured 3D mesh only when the user directly asks for generated mesh/model assets.\n",
                     "- `generate_material(prompt)` - Generate a custom material or texture only when the user directly asks for generated materials/textures.\n",
                     "- `generate_procedural_model(prompt)` - Generate a procedural model only when the user directly asks for generated procedural content.\n",
-                    "- `insert_from_creator_store(query_or_asset)` - Insert Creator Store assets only when the user directly asks to insert something from Creator Store.\n",
+                    "- `search_asset` / `insert_asset` - Find and insert Creator Store assets only when the user directly asks for Creator Store insertion. Follow the exposed schemas for asset IDs and source selection.\n",
                     "Do not use generation or Creator Store insertion tools as part of normal exploration, building, debugging, or verification. For ordinary work, use DataModel/script tools and `execute_luau`.\n\n",
                     "### Session Management\n",
 
                     "- `list_roblox_studios()` — List connected Studio instances\n",
-                    "- `set_active_studio(studio_id)` — Target a specific instance before making changes\n",
-                    "- If BloxBot says a Studio target is already active, use it directly without listing Studios or selecting it again.\n\n",
+                    "- Use the Studio ID supplied by BloxBot's target message on calls whose schema requires `studio_id`. If no target is known, use discovery to identify the intended Studio. Use legacy `set_active_studio` only if exposed and selection is needed.\n",
+                    "- If BloxBot says a Studio target is already active, use that exact target without listing Studios or selecting it again; still pass its ID when the tool schema requires it.\n\n",
 
                     "## Proportional Verification\n",
                     "Always verify changes, but scale verification to the risk and blast radius. ",
                     "For small low-risk changes, such as numeric tuning, copy text, simple property edits, or narrowly scoped script changes, use focused `script_read`, `inspect_instance`, `search_game_tree`, or a light playtest only when useful. ",
                     "Do not turn every tiny edit into a long playtest loop or subagent run unless the user explicitly asks for exhaustive validation. ",
-                    "Use `screen_capture`, `playtest_subagent`, broader playtesting, and extra regression checks for risky, visual, multi-system, physics, networking, economy, combat, save-data, or regression-prone changes.\n\n",
+                    "Use `screen_capture`, `subagent` with the playtest type, broader playtesting, and extra regression checks for risky, visual, multi-system, physics, networking, economy, combat, save-data, or regression-prone changes.\n\n",
 
                     "## Roblox Architecture\n\n",
 

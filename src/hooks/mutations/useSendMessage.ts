@@ -54,7 +54,7 @@ export function useSendMessage() {
 
       if (preferredStudioId) {
         messagePrefixes.push(
-          `[Studio Target Already Active: ${preferredStudioId}] BloxBot has already activated this exact Studio for the request. Do not list Studios or call set_active_studio; use the active Studio directly.`,
+          `[Studio Target Already Active: ${preferredStudioId}] BloxBot has already activated this exact Studio for the request. Use this exact ID as studio_id wherever the connected tool schema requires it. Do not list Studios or select the target again.`,
         );
       }
 
