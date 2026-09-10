@@ -615,7 +615,8 @@ describe("ChatInput", () => {
     });
     const args = client.session.promptAsync.mock.calls[0][0];
     expect(args.parts[0].text).toContain("[Studio Target Already Active: studio-1]");
-    expect(args.parts[0].text).toContain("Do not list Studios or call set_active_studio");
+    expect(args.parts[0].text).toContain("Use this exact ID as studio_id wherever the connected tool schema requires it");
+    expect(args.parts[0].text).toContain("Do not list Studios or select the target again");
   });
 
   it("returns to Auto mode and best-effort reconnects the Studio MCP server", async () => {
