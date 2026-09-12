@@ -1,3 +1,4 @@
+mod changes;
 mod logging;
 mod opencode;
 mod paths;
@@ -30,6 +31,7 @@ pub fn run() {
         .manage(vscode_bridge_state)
         .invoke_handler(tauri::generate_handler![
             opencode::get_opencode_info,
+            changes::read_studio_capture,
             opencode::list_roblox_studios,
             opencode::set_active_roblox_studio,
             skills::list_bloxbot_skills,

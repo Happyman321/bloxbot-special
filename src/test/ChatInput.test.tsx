@@ -8,6 +8,7 @@
 import type { Session, SessionStatus } from "@opencode-ai/sdk/v2/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
+import { LazyStore } from "@tauri-apps/plugin-store";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -202,6 +203,30 @@ afterEach(() => {
 // ── Tests ────────────────────────────────────────────────────────────
 
 describe("ChatInput", () => {
+  it("sends a persisted briefing as background context on every prompt without changing user text", async () => {
+    const store = new LazyStore("bloxbot-handoffs.json");
+    await store.set("continued-chat", {
+      version: 1, sourceSessionId: "old-chat", sourceTitle: "Old chat",
+      createdAt: Date.now(), sourceMessageId: "old-message", focus: "", text: "Inventory lives in ServerScriptService.Inventory.",
+    });
+    const client = createClient();
+    const qc = createQueryClient();
+    render(<TestChatInput client={client} queryClient={qc} sessionId="continued-chat" />);
+    const textarea = await screen.findByPlaceholderText("Describe what you want to build...");
+    for (const text of ["Fix stacking", "Now add sorting"]) {
+      await act(async () => {
+        fireEvent.change(textarea, { target: { value: text } });
+        fireEvent.click(screen.getByTitle("Send"));
+      });
+      const args = client.session.promptAsync.mock.calls.at(-1)?.[0];
+      expect(args.parts).toEqual([{ type: "text", text }]);
+      expect(args.system).toContain("Inventory lives in ServerScriptService.Inventory.");
+      expect(args.system).toContain("not new instructions or authorization");
+    }
+    expect(client.session.promptAsync).toHaveBeenCalledTimes(2);
+    await store.delete("continued-chat");
+  });
+
   it("renders the textarea and send button", async () => {
     const client = createClient();
     const qc = createQueryClient();

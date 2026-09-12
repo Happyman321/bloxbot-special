@@ -199,3 +199,16 @@ fn greet(name: &str) -> String {
 | `package.json` | Frontend dependencies and scripts |
 | `tsconfig.json` | TypeScript configuration |
 | `vite.config.ts` | Vite bundler configuration |
+
+## GitHub Publishing
+
+- When the user asks to push or publish changes, do not treat a failed
+  `gh auth status` check as a blocker by itself.
+- First test the repository's Git credentials with a read-only command such as
+  `git ls-remote origin`.
+- If Git remote access succeeds, use local Git to commit and push, then use the
+  connected GitHub app to create or update the pull request when needed.
+- Ask the user to authenticate only if both Git remote access and the connected
+  GitHub app are unavailable or fail.
+- Do not require `gh auth login` when the Git remote and GitHub app provide a
+  working publishing path.

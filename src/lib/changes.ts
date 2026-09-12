@@ -1,16 +1,13 @@
-import type { FileDiff, Part, SnapshotFileDiff } from "@opencode-ai/sdk/v2/client";
-
+import type { FileDiff, SnapshotFileDiff } from "@opencode-ai/sdk/v2/client";
 import type { MessageWithParts } from "@/types";
 
 export type ChangeKind = "add" | "modify" | "delete";
-
 export interface ScriptDiffLine {
   type: "context" | "add" | "remove";
   text: string;
   oldLineNumber: number | null;
   newLineNumber: number | null;
 }
-
 export interface SessionChange {
   key: string;
   path: string;
@@ -23,347 +20,384 @@ export interface SessionChange {
   diffLines: ScriptDiffLine[];
   sourceMessageId?: string;
   sourceMessageCreatedAt?: number;
+  properties?: PropertyChange[];
+  patchOnly?: boolean;
 }
-
-interface RawChangeInput {
+export interface PropertyChange {
+  name: string;
+  before?: unknown;
+  after?: unknown;
+}
+export interface StudioObject {
+  id: string;
   path: string;
-  before?: string;
-  after?: string;
-  kind?: ChangeKind;
-  sourceMessageId?: string;
-  sourceMessageCreatedAt?: number;
+  className: string;
+  source?: string;
+  properties: Record<string, unknown>;
+}
+export interface StudioCapture {
+  version: 1;
+  scope: string;
+  changes: Array<{ id: string; before: StudioObject | null; after: StudioObject | null }>;
+  warning?: string;
+}
+export interface ChangeTurn {
+  id: string;
+  label: string;
+  createdAt?: number;
+  messages: MessageWithParts[];
+  captureIds: string[];
+  studioCalls: number;
 }
 
-const SCRIPT_EXTENSIONS = new Set([
-  ".lua",
-  ".luau",
-  ".ts",
-  ".tsx",
-  ".js",
-  ".jsx",
-  ".json",
-  ".toml",
-  ".yaml",
-  ".yml",
-  ".md",
-  ".rs",
-]);
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== "object") return null;
-  return value as Record<string, unknown>;
+const SCRIPT_PATH = /\.(lua|luau|ts|tsx|js|jsx|json|toml|yaml|yml|md|rs|css|html)$/i;
+const CAPTURE_MARKER =
+  /\[BloxBot capture: ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]/g;
+const normalizePath = (path: string) => path.replace(/\\/g, "/").trim();
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
 }
-
-function asString(value: unknown): string | undefined {
+function string(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
-
-function asArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
+function json(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
 }
 
-function normalizePath(path: string): string {
-  return path.replace(/\\/g, "/").trim();
-}
-
-function inferKind(before: string, after: string, provided?: ChangeKind): ChangeKind {
-  if (provided) return provided;
-  if (!before && after) return "add";
-  if (before && !after) return "delete";
-  return "modify";
-}
-
-function isScriptPath(path: string): boolean {
-  const normalized = normalizePath(path).toLowerCase();
-  const dot = normalized.lastIndexOf(".");
-  if (dot < 0) return false;
-  return SCRIPT_EXTENSIONS.has(normalized.slice(dot));
-}
-
-function parseToolPart(part: Part): RawChangeInput[] {
-  const source = asRecord(part);
-  if (!source) return [];
-  const input = asRecord(source.input);
-  const output = asRecord(source.output);
-  const sources = [input, output].filter(Boolean) as Record<string, unknown>[];
-  const results: RawChangeInput[] = [];
-
-  for (const source of sources) {
-    const singlePath =
-      asString(source.path) ??
-      asString(source.file) ??
-      asString(source.filePath) ??
-      asString(source.filename);
-    const before =
-      asString(source.before) ??
-      asString(source.previous) ??
-      asString(source.old) ??
-      asString(source.oldText) ??
-      asString(source.original);
-    const after =
-      asString(source.after) ??
-      asString(source.new) ??
-      asString(source.newText) ??
-      asString(source.content) ??
-      asString(source.updated);
-
-    if (singlePath && (before !== undefined || after !== undefined)) {
-      results.push({ path: singlePath, before, after });
-    }
-
-    for (const key of ["files", "changes", "edits", "results"]) {
-      for (const entry of asArray(source[key])) {
-        const item = asRecord(entry);
-        if (!item) continue;
-        const path =
-          asString(item.path) ??
-          asString(item.file) ??
-          asString(item.filePath) ??
-          asString(item.filename);
-        if (!path) continue;
-        results.push({
-          path,
-          before:
-            asString(item.before) ??
-            asString(item.old) ??
-            asString(item.previous) ??
-            asString(item.original),
-          after:
-            asString(item.after) ??
-            asString(item.new) ??
-            asString(item.updated) ??
-            asString(item.content),
-          kind: asString(item.kind) as ChangeKind | undefined,
-        });
+export function getChangeTurns(
+  ids: string[],
+  byId: Record<string, MessageWithParts>,
+): ChangeTurn[] {
+  const turns: ChangeTurn[] = [];
+  for (const id of ids) {
+    const message = byId[id];
+    if (!message) continue;
+    if (message.info.role === "user") {
+      const text = message.parts
+        .filter((p) => p.type === "text")
+        .map((p) => p.text)
+        .join("\n");
+      turns.push({
+        id,
+        label: text.split("\n\n").slice(-1)[0]?.slice(0, 160) || "Request",
+        createdAt: message.info.time?.created,
+        messages: [],
+        captureIds: [],
+        studioCalls: 0,
+      });
+    } else if (message.info.role === "assistant") {
+      // Old imported transcripts may not contain a user message.
+      if (!turns.length)
+        turns.push({ id, label: "Earlier request", messages: [], captureIds: [], studioCalls: 0 });
+      const parentID = "parentID" in message.info ? message.info.parentID : undefined;
+      const turn = turns.find((t) => t.id === parentID) ?? turns[turns.length - 1];
+      turn.messages.push(message);
+      for (const part of message.parts) {
+        if (part.type !== "tool") continue;
+        if (/roblox.studio.*(execute_luau|multi_edit|insert)/i.test(part.tool)) turn.studioCalls++;
+        const state = record(part.state);
+        const output = string(state?.output) ?? string(state?.error) ?? "";
+        for (const match of output.matchAll(CAPTURE_MARKER)) {
+          if (!turn.captureIds.includes(match[1])) turn.captureIds.push(match[1]);
+        }
       }
     }
   }
-
-  return results;
+  return turns;
 }
 
-function parsePatchPart(part: Part): RawChangeInput[] {
-  const source = asRecord(part);
-  if (!source) return [];
-
-  const filePath =
-    asString(source.path) ??
-    asString(source.file) ??
-    asString(source.filePath) ??
-    asString(source.filename);
-  const before =
-    asString(source.before) ??
-    asString(source.old) ??
-    asString(source.oldText) ??
-    asString(source.previous) ??
-    asString(source.original);
-  const after =
-    asString(source.after) ??
-    asString(source.new) ??
-    asString(source.newText) ??
-    asString(source.content) ??
-    asString(source.updated);
-
-  const direct: RawChangeInput[] =
-    filePath && (before !== undefined || after !== undefined)
-      ? [{ path: filePath, before, after }]
-      : [];
-
-  const list: RawChangeInput[] = [];
-  for (const key of ["files", "changes", "edits", "items"]) {
-    for (const entry of asArray(source[key])) {
-      const item = asRecord(entry);
-      if (!item) continue;
-      const path =
-        asString(item.path) ??
-        asString(item.file) ??
-        asString(item.filePath) ??
-        asString(item.filename);
-      if (!path) continue;
-      list.push({
-        path,
-        before:
-          asString(item.before) ??
-          asString(item.old) ??
-          asString(item.previous) ??
-          asString(item.original),
-        after:
-          asString(item.after) ??
-          asString(item.new) ??
-          asString(item.updated) ??
-          asString(item.content),
-        kind: asString(item.kind) as ChangeKind | undefined,
-      });
+/** Myers line alignment, with a work limit for completely different large files. */
+export function computeScriptDiff(before: string, after: string): ScriptDiffLine[] {
+  const split = (text: string) => (text === "" ? [] : text.replace(/\r\n/g, "\n").split("\n"));
+  const a = split(before),
+    b = split(after);
+  let prefix = 0;
+  while (prefix < a.length && prefix < b.length && a[prefix] === b[prefix]) prefix++;
+  let suffix = 0;
+  while (
+    suffix < a.length - prefix &&
+    suffix < b.length - prefix &&
+    a[a.length - 1 - suffix] === b[b.length - 1 - suffix]
+  )
+    suffix++;
+  const left = a.slice(prefix, a.length - suffix),
+    right = b.slice(prefix, b.length - suffix);
+  type Edit = { type: ScriptDiffLine["type"]; text: string };
+  const trace: Map<number, number>[] = [];
+  const v = new Map<number, number>([[1, 0]]);
+  let middle: Edit[] | undefined;
+  let work = 0;
+  search: for (let d = 0; d <= left.length + right.length; d++) {
+    work += 2 * d + 1;
+    if (work > 1_000_000) break;
+    trace.push(new Map(v));
+    for (let k = -d; k <= d; k += 2) {
+      let x =
+        k === -d || (k !== d && (v.get(k - 1) ?? -1) < (v.get(k + 1) ?? -1))
+          ? (v.get(k + 1) ?? 0)
+          : (v.get(k - 1) ?? 0) + 1;
+      let y = x - k;
+      while (x < left.length && y < right.length && left[x] === right[y]) {
+        x++;
+        y++;
+      }
+      v.set(k, x);
+      if (x < left.length || y < right.length) continue;
+      middle = [];
+      for (let depth = d; depth >= 0; depth--) {
+        const previous = trace[depth];
+        const diagonal = x - y;
+        const prevK =
+          diagonal === -depth ||
+          (diagonal !== depth &&
+            (previous.get(diagonal - 1) ?? -1) < (previous.get(diagonal + 1) ?? -1))
+            ? diagonal + 1
+            : diagonal - 1;
+        const prevX = previous.get(prevK) ?? 0,
+          prevY = prevX - prevK;
+        while (x > prevX && y > prevY) {
+          middle.push({ type: "context", text: left[--x] });
+          y--;
+        }
+        if (depth > 0) {
+          if (x === prevX) middle.push({ type: "add", text: right[--y] });
+          else middle.push({ type: "remove", text: left[--x] });
+        }
+      }
+      middle.reverse();
+      break search;
     }
   }
-
-  return [...direct, ...list];
+  middle ??= [
+    ...left.map((text) => ({ type: "remove" as const, text })),
+    ...right.map((text) => ({ type: "add" as const, text })),
+  ];
+  const edits: Edit[] = [
+    ...a.slice(0, prefix).map((text) => ({ type: "context" as const, text })),
+    ...middle,
+    ...a.slice(a.length - suffix).map((text) => ({ type: "context" as const, text })),
+  ];
+  let oldLine = 0,
+    newLine = 0;
+  return edits.map((line) => ({
+    ...line,
+    oldLineNumber: line.type === "add" ? null : ++oldLine,
+    newLineNumber: line.type === "remove" ? null : ++newLine,
+  }));
 }
 
-function computeScriptDiff(before: string, after: string): ScriptDiffLine[] {
-  const a = before.split("\n");
-  const b = after.split("\n");
-  const maxLen = Math.max(a.length, b.length);
-  const lines: ScriptDiffLine[] = [];
-
-  let oldLine = 1;
-  let newLine = 1;
-
-  for (let i = 0; i < maxLen; i++) {
-    const oldText = a[i];
-    const newText = b[i];
-
-    if (oldText === newText) {
-      lines.push({
-        type: "context",
-        text: oldText ?? "",
-        oldLineNumber: oldText !== undefined ? oldLine : null,
-        newLineNumber: newText !== undefined ? newLine : null,
-      });
-      if (oldText !== undefined) oldLine += 1;
-      if (newText !== undefined) newLine += 1;
-      continue;
-    }
-
-    if (oldText !== undefined) {
-      lines.push({ type: "remove", text: oldText, oldLineNumber: oldLine, newLineNumber: null });
-      oldLine += 1;
-    }
-
-    if (newText !== undefined) {
-      lines.push({ type: "add", text: newText, oldLineNumber: null, newLineNumber: newLine });
-      newLine += 1;
-    }
-  }
-
-  return lines;
-}
-
-function countDiffLines(lines: ScriptDiffLine[]) {
-  let linesAdded = 0;
-  let linesRemoved = 0;
-
-  for (const line of lines) {
-    if (line.type === "add") linesAdded += 1;
-    if (line.type === "remove") linesRemoved += 1;
-  }
-
-  return { linesAdded, linesRemoved };
-}
-
-function extractRawChanges(part: Part): RawChangeInput[] {
-  if (part.type === "tool") {
-    return parseToolPart(part);
-  }
-  if (part.type === "patch" || part.type === "snapshot") {
-    return parsePatchPart(part);
-  }
-  return [];
-}
-
-function toSessionChange(change: RawChangeInput, defaultKeyPrefix: string): SessionChange {
-  const before = change.before ?? "";
-  const after = change.after ?? "";
+function makeChange(
+  path: string,
+  before: string,
+  after: string,
+  kind: ChangeKind,
+  messageId?: string,
+): SessionChange {
   const diffLines = computeScriptDiff(before, after);
-  const { linesAdded, linesRemoved } = countDiffLines(diffLines);
-  const kind = inferKind(before, after, change.kind);
-
   return {
-    key: `${defaultKeyPrefix}:${change.path}:${kind}`,
-    path: change.path,
-    kind,
+    key: `${messageId}:${path}`,
+    path,
     before,
     after,
-    isScript: isScriptPath(change.path),
-    linesAdded,
-    linesRemoved,
+    kind,
+    isScript: SCRIPT_PATH.test(path),
     diffLines,
-    sourceMessageId: change.sourceMessageId,
-    sourceMessageCreatedAt: change.sourceMessageCreatedAt,
-  } satisfies SessionChange;
+    linesAdded: diffLines.filter((l) => l.type === "add").length,
+    linesRemoved: diffLines.filter((l) => l.type === "remove").length,
+    sourceMessageId: messageId,
+  };
+}
+
+// Only accept recorded before/after pairs. Tool inputs are proposed work, not evidence of edits.
+function extractPairs(
+  value: unknown,
+  depth = 0,
+): Array<{ path: string; before: string; after: string }> {
+  if (depth > 5) return [];
+  const parsed = json(value) ?? value;
+  if (Array.isArray(parsed)) return parsed.flatMap((item) => extractPairs(item, depth + 1));
+  const obj = record(parsed);
+  if (!obj) return [];
+  const path = string(obj.filePath) ?? string(obj.path) ?? string(obj.file) ?? string(obj.filename);
+  const before = string(obj.before),
+    after = string(obj.after);
+  if (path && before !== undefined && after !== undefined)
+    return [{ path: normalizePath(path), before, after }];
+  return ["files", "changes", "edits", "results", "content", "text", "filediff"].flatMap((key) =>
+    extractPairs(obj[key], depth + 1),
+  );
 }
 
 export function buildSessionChanges(
-  messageIds: string[],
-  messagesById: Record<string, MessageWithParts>,
+  ids: string[],
+  byId: Record<string, MessageWithParts>,
 ): SessionChange[] {
-  for (let i = messageIds.length - 1; i >= 0; i -= 1) {
-    const messageId = messageIds[i];
-    const message = messagesById[messageId];
-    if (!message || message.info.role !== "assistant") continue;
+  const turns = getChangeTurns(ids, byId);
+  const turn = turns[turns.length - 1];
+  return turn ? buildTurnChanges(turn, {}) : [];
+}
 
-    const latestByPath = new Map<string, RawChangeInput>();
+export function buildTurnChanges(
+  turn: ChangeTurn,
+  captures: Record<string, StudioCapture>,
+): SessionChange[] {
+  const files = new Map<string, { before: string; after: string }>();
+  for (const message of turn.messages)
     for (const part of message.parts) {
-      const rawChanges = extractRawChanges(part);
-      for (const change of rawChanges) {
-        const path = normalizePath(change.path);
-        if (!path) continue;
-        latestByPath.set(path, {
-          ...change,
-          path,
-          sourceMessageId: messageId,
-          sourceMessageCreatedAt: message.info.time?.created,
-        });
-      }
+      const raw = record(part);
+      const state = record(raw?.state);
+      const sources =
+        part.type === "tool"
+          ? state?.status === "completed"
+            ? [state.metadata, state.output]
+            : []
+          : part.type === "patch"
+            ? [part]
+            : [];
+      for (const source of sources)
+        for (const pair of extractPairs(source)) {
+          files.set(pair.path, {
+            before: files.get(pair.path)?.before ?? pair.before,
+            after: pair.after,
+          });
+        }
     }
-
-    if (latestByPath.size === 0) continue;
-
-    return [...latestByPath.values()]
-      .map((change) => toSessionChange(change, messageId))
-      .sort((a, b) => a.path.localeCompare(b.path));
+  const result: SessionChange[] = [];
+  for (const [path, value] of files) {
+    if (value.before === value.after) continue;
+    result.push(
+      makeChange(
+        path,
+        value.before,
+        value.after,
+        !value.before ? "add" : !value.after ? "delete" : "modify",
+        turn.id,
+      ),
+    );
   }
-
-  return [];
+  const objects = new Map<string, StudioCapture["changes"][number]>();
+  for (const captureId of turn.captureIds) {
+    const capture = captures[captureId];
+    if (!capture) continue;
+    for (const change of capture.changes) {
+      const key = `${capture.scope}:${change.id}`;
+      const first = objects.get(key);
+      objects.set(key, { ...change, before: first ? first.before : change.before });
+    }
+  }
+  for (const [key, { before, after }] of objects) {
+    if (!before && !after) continue;
+    const properties: PropertyChange[] = [];
+    const oldProps = before
+      ? { Path: before.path, ClassName: before.className, ...before.properties }
+      : {};
+    const newProps = after
+      ? { Path: after.path, ClassName: after.className, ...after.properties }
+      : {};
+    for (const name of [...new Set([...Object.keys(oldProps), ...Object.keys(newProps)])].sort()) {
+      const oldValue = (oldProps as Record<string, unknown>)[name],
+        newValue = (newProps as Record<string, unknown>)[name];
+      if (JSON.stringify(oldValue) !== JSON.stringify(newValue))
+        properties.push({ name, before: oldValue, after: newValue });
+    }
+    if (before && after && before.source === after.source && !properties.length) continue;
+    const object = after ?? before;
+    if (!object) continue;
+    const change = makeChange(
+      object.path,
+      before?.source ?? "",
+      after?.source ?? "",
+      !before ? "add" : !after ? "delete" : "modify",
+      turn.id,
+    );
+    change.key = `${turn.id}:${key}`;
+    change.isScript = object.source !== undefined;
+    change.properties = properties;
+    result.push(change);
+  }
+  return result.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-type ApiDiff = FileDiff | SnapshotFileDiff;
-
-function getApiDiffPath(diff: ApiDiff): string {
-  return "path" in diff ? diff.path : (diff.file ?? "");
-}
-
-function getApiDiffPatch(diff: ApiDiff): string {
-  return "patch" in diff ? (diff.patch ?? "") : "";
-}
-
-function getApiDiffKind(diff: ApiDiff): ChangeKind | undefined {
-  if (!("status" in diff)) return undefined;
-  if (diff.status === "added") return "add";
-  if (diff.status === "deleted") return "delete";
-  if (diff.status === "modified") return "modify";
-  return undefined;
-}
-
+type ApiDiff =
+  | FileDiff
+  | SnapshotFileDiff
+  | { file: string; before: string; after: string; additions: number; deletions: number };
 export function buildSessionChangesFromDiffs(
-  diffsByMessage: Array<{ messageId: string; createdAt?: number; diffs: ApiDiff[] }>,
+  items: Array<{ messageId: string; createdAt?: number; diffs: ApiDiff[] }>,
 ): SessionChange[] {
-  const all: SessionChange[] = [];
-
-  for (const item of diffsByMessage) {
-    for (const diff of item.diffs) {
-      const path = normalizePath(getApiDiffPath(diff));
-      if (!path) continue;
-      const patch = getApiDiffPatch(diff);
-      all.push(
-        toSessionChange(
-          {
-            path,
-            after: patch,
-            kind: getApiDiffKind(diff),
-            sourceMessageId: item.messageId,
-            sourceMessageCreatedAt: item.createdAt,
-          },
+  return items
+    .flatMap((item) =>
+      item.diffs.flatMap((diff) => {
+        const path = normalizePath(("path" in diff ? diff.path : diff.file) ?? "");
+        if (!path) return [];
+        const kind =
+          "status" in diff && diff.status === "added"
+            ? "add"
+            : "status" in diff && diff.status === "deleted"
+              ? "delete"
+              : "modify";
+        const change = makeChange(
+          path,
+          "before" in diff ? diff.before : "",
+          "after" in diff ? diff.after : "",
+          kind,
           item.messageId,
-        ),
-      );
-    }
-  }
-
-  return all.sort((a, b) => {
-    const aTime = a.sourceMessageCreatedAt ?? 0;
-    const bTime = b.sourceMessageCreatedAt ?? 0;
-    if (aTime !== bTime) return bTime - aTime;
-    return a.path.localeCompare(b.path);
-  });
+        );
+        change.sourceMessageCreatedAt = item.createdAt;
+        if ("patch" in diff) {
+          change.patchOnly = true;
+          change.linesAdded = diff.additions;
+          change.linesRemoved = diff.deletions;
+          let oldLine = 0,
+            newLine = 0,
+            inHunk = false;
+          change.diffLines = (diff.patch ?? "").split("\n").flatMap((text): ScriptDiffLine[] => {
+            const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(text);
+            if (hunk) {
+              oldLine = Number(hunk[1]);
+              newLine = Number(hunk[2]);
+              inHunk = true;
+              return [{ type: "context", text, oldLineNumber: null, newLineNumber: null }];
+            }
+            if (!inHunk) return [];
+            if (text.startsWith("+"))
+              return [
+                { type: "add", text: text.slice(1), oldLineNumber: null, newLineNumber: newLine++ },
+              ];
+            if (text.startsWith("-"))
+              return [
+                {
+                  type: "remove",
+                  text: text.slice(1),
+                  oldLineNumber: oldLine++,
+                  newLineNumber: null,
+                },
+              ];
+            if (text.startsWith(" "))
+              return [
+                {
+                  type: "context",
+                  text: text.slice(1),
+                  oldLineNumber: oldLine++,
+                  newLineNumber: newLine++,
+                },
+              ];
+            return [];
+          });
+        }
+        return [change];
+      }),
+    )
+    .sort(
+      (a, b) =>
+        (b.sourceMessageCreatedAt ?? 0) - (a.sourceMessageCreatedAt ?? 0) ||
+        a.path.localeCompare(b.path),
+    );
 }

@@ -2,6 +2,7 @@ import type { Session } from "@opencode-ai/sdk/v2/client";
 import { useQuery } from "@tanstack/react-query";
 
 import { qk } from "@/lib/queryKeys";
+import { visibleSessions } from "@/lib/handoffSessions";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
 
 export function useSessions() {
@@ -13,7 +14,7 @@ export function useSessions() {
       if (!client) return [];
       const res = await client.session.list({});
       if (!res.data) return [];
-      return [...res.data].sort((a, b) => b.time.created - a.time.created);
+      return visibleSessions(res.data).sort((a, b) => b.time.created - a.time.created);
     },
     enabled: ready && !!client,
   });

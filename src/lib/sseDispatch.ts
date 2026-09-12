@@ -12,6 +12,7 @@ import { chatErrorMessage, isChatAbortError } from "@/lib/chatErrors";
 import { claimDictatorManagedSession, type DictatorProfile } from "@/lib/dictators";
 import { upsertSessionById } from "@/lib/dictatorWorkers";
 import { recordSessionStatus, recordSseEvent } from "@/lib/diagnostics";
+import { isInternalHandoffEvent } from "@/lib/handoffSessions";
 import { qk } from "@/lib/queryKeys";
 import type { MessageWithParts } from "@/types";
 
@@ -77,6 +78,7 @@ export function sseDispatch(
   activeSessionIdRef: { current: string | null },
 ) {
   if (!event || !event.type) return;
+  if (isInternalHandoffEvent(event)) return;
 
   const currentSessionId = activeSessionIdRef.current;
   recordSseEvent(event);
@@ -112,6 +114,7 @@ export function sseDispatch(
       }
       case "session.status": {
         const { sessionID, status } = event.properties;
+        if (status.type === "idle") void queryClient.invalidateQueries({ queryKey: qk.changes(sessionID) });
         recordSessionStatus(sessionID, status.type);
         if (status.type === "busy") queryClient.setQueryData(qk.chatError(sessionID), null);
         queryClient.setQueryData<Record<string, SessionStatus>>(qk.statuses, (prev) => {
@@ -122,11 +125,16 @@ export function sseDispatch(
       }
       case "session.idle": {
         const { sessionID } = event.properties;
+        void queryClient.invalidateQueries({ queryKey: qk.changes(sessionID) });
         recordSessionStatus(sessionID, "idle");
         queryClient.setQueryData<Record<string, SessionStatus>>(qk.statuses, (prev) => {
           if (prev?.[sessionID]?.type === "idle") return prev;
           return { ...prev, [sessionID]: { type: "idle" } as SessionStatus };
         });
+        break;
+      }
+      case "session.diff": {
+        void queryClient.invalidateQueries({ queryKey: qk.changes(event.properties.sessionID) });
         break;
       }
       case "message.updated": {

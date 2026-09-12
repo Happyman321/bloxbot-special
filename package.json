@@ -1,7 +1,7 @@
 {
   "name": "bloxbot",
   "private": true,
-  "version": "8.2.3",
+  "version": "8.2.4",
   "type": "module",
   "license": "MIT",
   "author": "BloxBot",
@@ -17,7 +17,7 @@
     "preview": "vite preview",
     "lint": "biome check src/",
     "lint:fix": "biome check --write src/",
-    "test": "pnpm build:devforum-mcp && vitest run && node scripts/test-devforum-mcp.mjs && node scripts/test-vscode-mcp.mjs",
+    "test": "pnpm build:devforum-mcp && vitest run && node scripts/test-devforum-mcp.mjs && node scripts/test-studio-changes.mjs && node scripts/test-vscode-mcp.mjs",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "tauri": "tauri"

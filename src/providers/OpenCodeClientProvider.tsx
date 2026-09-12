@@ -16,6 +16,8 @@ import { DEFAULT_COMPANION_PREFERENCES } from "@/lib/companion";
 import { type AppConfig, loadConfig } from "@/lib/config";
 import { recordSseConnected, recordSseFailure, recordSseReconnecting } from "@/lib/diagnostics";
 import { qk } from "@/lib/queryKeys";
+import { visibleSessions } from "@/lib/handoffSessions";
+import { recoverInterruptedHandoffs } from "@/lib/handoffs";
 import { sseDispatch } from "@/lib/sseDispatch";
 import { applyTheme, DEFAULT_THEME_ID, THEME_BY_ID } from "@/lib/themes";
 
@@ -277,8 +279,11 @@ async function prefetchServerState(client: OpencodeClient, queryClient: QueryCli
   ]);
 
   if (sessionRes.data) {
-    const sorted = [...sessionRes.data].sort((a, b) => b.time.created - a.time.created);
+    const sorted = visibleSessions(sessionRes.data).sort((a, b) => b.time.created - a.time.created);
     queryClient.setQueryData(qk.sessions, sorted);
+    void recoverInterruptedHandoffs(client, sessionRes.data).catch(() => {
+      toast.error("Some interrupted handoffs could not be cleaned up. Restart to retry.");
+    });
   }
 
   if (statusRes.data) {

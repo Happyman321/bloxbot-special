@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useState } from "react";
 
 import ChatInput from "@/components/ChatInput";
+import ChatHandoff from "@/components/ChatHandoff";
 import ChatMessages from "@/components/ChatMessages";
 import ChatSidebar from "@/components/ChatSidebar";
 import DiffViewer from "@/components/DiffViewer";
@@ -103,7 +104,7 @@ function Chat() {
                 className="rounded-md border px-2.5 py-1 text-[11px] font-medium hover:bg-accent"
               >
                 Changes
-                <span className="ml-1 text-muted-foreground">({sessionChanges.length})</span>
+                <span className="ml-1 text-muted-foreground">({sessionChanges.isWorking ? "working" : sessionChanges.changes.length})</span>
               </button>
             </div>
 
@@ -126,12 +127,13 @@ function Chat() {
               <span>Studio not detected? If Studio is connected, tell BloxBot to try again.</span>
             </div>
 
+            <ChatHandoff key={activeSessionId} sessionID={activeSessionId} />
             <ChatMessages />
             <ChatInput />
           </>
         )}
 
-        <DiffViewer changes={sessionChanges} open={showChanges} onClose={handleCloseChanges} />
+        <DiffViewer key={activeSessionId} {...sessionChanges} open={showChanges} onClose={handleCloseChanges} />
 
         {initError && (
           <div className="shrink-0 border-t border-danger-border bg-danger-surface px-4 py-2 text-xs text-danger-foreground">

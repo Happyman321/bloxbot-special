@@ -1,8 +1,9 @@
-import type { SessionStatus } from "@opencode-ai/sdk/v2/client";
+import type { Session, SessionStatus } from "@opencode-ai/sdk/v2/client";
 import { usePostHog } from "@posthog/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { chatErrorMessage } from "@/lib/chatErrors";
+import { briefingSystemContext, isHandoffRunning, readBriefing } from "@/lib/handoffs";
 import { recordPromptFailure, recordPromptStart, recordPromptSuccess } from "@/lib/diagnostics";
 import { qk } from "@/lib/queryKeys";
 import type { SkillSummary } from "@/lib/skills";
@@ -36,6 +37,9 @@ export function useSendMessage() {
   return useMutation({
     mutationFn: async ({ text, images, skill }: SendMessageInput) => {
       if (!client || !activeSessionId) throw new Error("No client or session");
+      if (isHandoffRunning(activeSessionId)) {
+        throw new Error("Wait for the handoff to finish or cancel it before sending another message.");
+      }
 
       const messagePrefixes: string[] = [];
 
@@ -124,6 +128,9 @@ export function useSendMessage() {
       });
       queryClient.setQueryData(qk.chatError(activeSessionId), null);
       try {
+        const session = queryClient.getQueryData<Session[]>(qk.sessions)?.find((item) => item.id === activeSessionId);
+        const briefing = await readBriefing(activeSessionId, session?.metadata?.bloxbotHandoff === "ready");
+        if (briefing) opts.system = briefingSystemContext(briefing);
         if (preferredStudioId) {
           try {
             await invoke("set_active_roblox_studio", { studioId: preferredStudioId });

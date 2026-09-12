@@ -590,7 +590,7 @@ describe("User journeys", () => {
       fireEvent.click(deleteButtons[0]);
     });
 
-    expect(client.session.delete).toHaveBeenCalledWith({ sessionID: "s1" });
+    expect(client.session.delete).toHaveBeenCalledWith({ sessionID: "s1" }, { throwOnError: true });
 
     // Session One should be gone from the sidebar
     await waitFor(() => {

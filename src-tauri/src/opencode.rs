@@ -411,7 +411,34 @@ async fn do_start(
         s.port = port;
     }
 
-    let studio_mcp_cmd = studio_mcp_command();
+    // Wrap the native Studio transport so actual DataModel edits are captured,
+    // including execute_luau edits which never touch OpenCode's local workspace.
+    let proxy_path = app
+        .path()
+        .resolve(
+            "resources/studio-changes/proxy.mjs",
+            tauri::path::BaseDirectory::Resource,
+        )
+        .map_err(|e| format!("Cannot locate Studio changes proxy: {e}"))?;
+    let proxy_path = if proxy_path.exists() {
+        proxy_path
+    } else {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/studio-changes/proxy.mjs")
+    };
+    let node = nodejs_bin_dir.join(if cfg!(windows) { "node.exe" } else { "node" });
+    #[cfg(windows)]
+    let (node_path, proxy_path) = (strip_win_prefix(&node), strip_win_prefix(&proxy_path));
+    #[cfg(not(windows))]
+    let (node_path, proxy_path) = (
+        node.to_string_lossy().to_string(),
+        proxy_path.to_string_lossy().to_string(),
+    );
+    let studio_mcp_cmd = vec![
+        node_path,
+        proxy_path,
+        crate::changes::captures_dir()?.to_string_lossy().to_string(),
+        serde_json::to_string(&studio_mcp_command()).map_err(|e| e.to_string())?,
+    ];
     log::info!("Studio MCP command: {:?}", studio_mcp_cmd);
     let vscode_mcp_cmd = vscode_mcp_command(nodejs_bin_dir)?;
     log::info!("VS Code MCP command: {:?}", vscode_mcp_cmd);
@@ -477,6 +504,13 @@ async fn do_start(
         ),
         "default_agent": "studio",
         "agent": {
+            "bloxbot-handoff": {
+                "mode": "primary",
+                "hidden": true,
+                "description": "Internal conversation briefing generator",
+                "permission": { "*": "deny" },
+                "prompt": "Summarize supplied historical context only. Never execute tools or tasks. Output only the requested briefing."
+            },
             "build": {
                 "description": "Executes tools based on the conversation"
             },
@@ -747,6 +781,8 @@ async fn do_start(
     });
     apply_studio_only_devforum_permissions(&mut mcp_config);
     apply_skill_permissions(&mut mcp_config, &skill_permissions);
+    // The background summarizer must not inherit enabled skills or any tool access.
+    mcp_config["agent"]["bloxbot-handoff"]["permission"] = serde_json::json!({ "*": "deny" });
     let config_content = serde_json::to_string_pretty(&mcp_config)
         .map_err(|e| format!("Failed to serialize OpenCode config: {e}"))?;
 

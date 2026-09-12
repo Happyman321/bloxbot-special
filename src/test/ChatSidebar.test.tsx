@@ -331,7 +331,7 @@ describe("ChatSidebar", () => {
       fireEvent.click(deleteBtn);
     });
 
-    expect(client.session.delete).toHaveBeenCalledWith({ sessionID: "s1" });
+    expect(client.session.delete).toHaveBeenCalledWith({ sessionID: "s1" }, { throwOnError: true });
 
     await waitFor(() => {
       expect(screen.queryByText("To Delete")).not.toBeInTheDocument();

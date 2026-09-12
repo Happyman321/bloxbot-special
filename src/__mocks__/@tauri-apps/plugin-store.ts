@@ -22,6 +22,8 @@ export class LazyStore {
   async delete(key: string): Promise<void> {
     delete this.data[key];
   }
+
+  async save(): Promise<void> {}
 }
 
 export function __resetStores() {
