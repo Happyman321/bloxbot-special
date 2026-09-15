@@ -30,6 +30,9 @@ src-tauri/resources/launcher/dist/
 src-tauri/resources/devforum-mcp/server.mjs
 src-tauri/resources/devforum-mcp/LICENSE
 src-tauri/resources/devforum-mcp/licenses/
+src-tauri/resources/voice/model/
+src-tauri/resources/voice/node_modules/
+src-tauri/resources/voice/LICENSE
 src-tauri/binaries/opencode*
 src-tauri/binaries/*.exe
 src-tauri/binaries/*.zip

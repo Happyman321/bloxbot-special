@@ -203,33 +203,6 @@ afterEach(() => {
 // ── Tests ────────────────────────────────────────────────────────────
 
 describe("ChatInput", () => {
-  it("opens Windows dictation with the composer focused even without Web Speech", async () => {
-    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
-    const client = createClient();
-    render(<TestChatInput client={client} queryClient={createQueryClient()} />);
-    const textarea = await screen.findByPlaceholderText("Describe what you want to build...");
-    fireEvent.change(textarea, { target: { value: "Existing draft" } });
-    vi.mocked(invoke).mockImplementation(async (command) => {
-      if (command === "start_voice_typing") expect(textarea).toHaveFocus();
-      return undefined;
-    });
-    fireEvent.click(screen.getByTitle("Voice input"));
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith("start_voice_typing"));
-    expect(textarea).toHaveValue("Existing draft");
-    expect(client.session.promptAsync).not.toHaveBeenCalled();
-  });
-
-  it("reports a native dictation launch failure and allows retry", async () => {
-    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Windows NT 10.0");
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    render(<TestChatInput client={createClient()} queryClient={createQueryClient()} />);
-    await screen.findByPlaceholderText("Describe what you want to build...");
-    vi.mocked(invoke).mockRejectedValue("Focus the BloxBot window and try voice input again.");
-    fireEvent.click(screen.getByTitle("Voice input"));
-    expect(await screen.findByText("Focus the BloxBot window and try voice input again.")).toBeInTheDocument();
-    expect(screen.getByTitle("Voice input")).toBeEnabled();
-  });
-
   it("sends a persisted briefing as background context on every prompt without changing user text", async () => {
     const store = new LazyStore("bloxbot-handoffs.json");
     await store.set("continued-chat", {

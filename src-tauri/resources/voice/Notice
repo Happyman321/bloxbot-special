@@ -1,0 +1,14 @@
+Licensed by NVIDIA Corporation under the NVIDIA Open Model License
+
+BloxBot distributes an int8 ONNX conversion of NVIDIA's
+nemotron-speech-streaming-en-0.6b model with 160 ms streaming chunks.
+Conversion by the sherpa-onnx project; model weights are not trained or modified
+by BloxBot. See MODEL-LICENSE.html for the governing model agreement.
+
+Original: https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b
+Conversion: https://huggingface.co/csukuangfj2/sherpa-onnx-nemotron-speech-streaming-en-0.6b-160ms-int8-2026-04-25
+Revision: 237e551abd7a411ef92d3595454d9f6ab5fe7d6c
+
+Speech runtime: sherpa-onnx 1.13.8 (Apache-2.0; see LICENSE).
+Inference runtime: ONNX Runtime 1.28.2 (MIT; see ONNXRUNTIME-LICENSE.txt
+and ONNXRUNTIME-ThirdPartyNotices.txt).

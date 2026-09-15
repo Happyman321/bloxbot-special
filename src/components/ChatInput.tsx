@@ -8,6 +8,7 @@ import { useCompanionSafeOffset } from "@/hooks/useCompanionSafeOffset";
 import { useAllModels, useConnectedProviders } from "@/hooks/useProviders";
 import { useIsBusy } from "@/hooks/useSessionStatuses";
 import { type SkillSummary, useBloxbotSkills } from "@/lib/skills";
+import { LocalVoiceCapture, type VoiceStatus } from "@/lib/localVoice";
 import { splitModelKey } from "@/lib/splitModelKey";
 import { useActiveSession } from "@/providers/ActiveSessionProvider";
 import { useOpenCodeClient } from "@/providers/OpenCodeClientProvider";
@@ -27,48 +28,6 @@ interface StudioInstance {
   id: string;
   name: string;
   active: boolean;
-}
-
-interface SpeechRecognitionConstructor {
-  new (): SpeechRecognitionLike;
-}
-
-interface SpeechRecognitionLike extends EventTarget {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
-  onend: (() => void) | null;
-  start: () => void;
-  stop: () => void;
-}
-
-interface SpeechRecognitionEventLike {
-  resultIndex: number;
-  results: {
-    length: number;
-    [index: number]: {
-      isFinal: boolean;
-      length: number;
-      [altIndex: number]: {
-        transcript: string;
-      };
-    };
-  };
-}
-
-interface SpeechRecognitionErrorEventLike {
-  error: string;
-}
-
-function getSpeechRecognitionConstructor(): SpeechRecognitionConstructor | null {
-  if (typeof window === "undefined") return null;
-  const maybeWindow = window as Window & {
-    SpeechRecognition?: SpeechRecognitionConstructor;
-    webkitSpeechRecognition?: SpeechRecognitionConstructor;
-  };
-  return maybeWindow.SpeechRecognition ?? maybeWindow.webkitSpeechRecognition ?? null;
 }
 
 const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
@@ -316,7 +275,8 @@ function ChatInput() {
   const [detectedStudios, setDetectedStudios] = useState<StudioInstance[]>([]);
   const [modelSearch, setModelSearch] = useState("");
   const [rejectShake, setRejectShake] = useState(false);
-  const [isListening, setIsListening] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>("idle");
+  const isListening = voiceStatus !== "idle";
   const [interimTranscript, setInterimTranscript] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const companionOffsetRef = useCompanionSafeOffset("--companion-chat-offset");
@@ -328,10 +288,14 @@ function ChatInput() {
   const skillPickerRef = useRef<HTMLDivElement>(null);
   const dragCounterRef = useRef(0);
   const rejectTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const windowsVoiceTyping = useMemo(() => /Windows/i.test(navigator.userAgent), []);
-  const [openingVoiceTyping, setOpeningVoiceTyping] = useState(false);
-  const speechSupported = windowsVoiceTyping || getSpeechRecognitionConstructor() !== null;
+  const voiceRef = useRef<LocalVoiceCapture | null>(null);
+  const draftRef = useRef("");
+  const submittingRef = useRef(false);
+  const currentSessionRef = useRef(activeSessionId);
+  currentSessionRef.current = activeSessionId;
+  const speechSupported =
+    typeof navigator.mediaDevices?.getUserMedia === "function" &&
+    typeof AudioWorkletNode !== "undefined";
   const resizeTextarea = useCallback((el: HTMLTextAreaElement) => {
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
@@ -344,106 +308,47 @@ function ChatInput() {
   }, []);
 
   useEffect(() => {
+    return () => clearTimeout(rejectTimerRef.current);
+  }, []);
+
+  useEffect(() => {
     return () => {
-      clearTimeout(rejectTimerRef.current);
-      recognitionRef.current?.stop();
+      voiceRef.current?.cancel();
+      voiceRef.current = null;
     };
-  }, []);
+  }, [activeSessionId]);
 
-  const stopVoiceInput = useCallback(() => {
-    recognitionRef.current?.stop();
-    setIsListening(false);
-    setInterimTranscript("");
-  }, []);
-
-  const startVoiceInput = useCallback(() => {
-    const SpeechRecognitionCtor = getSpeechRecognitionConstructor();
-    if (!SpeechRecognitionCtor) {
-      toast.error("Voice input is not available in this environment.");
-      return;
-    }
-
-    const recognition = new SpeechRecognitionCtor();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = "en-US";
-
-    recognition.onresult = (event) => {
-      let finalText = "";
-      let interimText = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0]?.transcript ?? "";
-        if (event.results[i].isFinal) {
-          finalText += transcript;
-        } else {
-          interimText += transcript;
-        }
-      }
-
-      if (finalText.trim()) {
-        setText((prev) => {
-          const spacer = prev.trim().length > 0 ? " " : "";
-          return `${prev}${spacer}${finalText.trim()}`;
-        });
-        setTimeout(() => {
-          if (textareaRef.current) {
-            resizeTextarea(textareaRef.current);
-          }
-        }, 0);
-      }
-      setInterimTranscript(interimText.trim());
-    };
-
-    recognition.onerror = (event) => {
-      if (event.error !== "aborted") {
-        toast.error("Voice input failed. Please try again.");
-      }
-      setIsListening(false);
-      setInterimTranscript("");
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-      setInterimTranscript("");
-      recognitionRef.current = null;
-    };
-
-    recognitionRef.current = recognition;
-
-    try {
-      recognition.start();
-      setIsListening(true);
-      setInterimTranscript("");
-    } catch {
-      toast.error("Unable to start voice input.");
-      setIsListening(false);
-      setInterimTranscript("");
-      recognitionRef.current = null;
-    }
-  }, [resizeTextarea]);
-
-  async function handleMicClick() {
-    if (windowsVoiceTyping) {
-      if (openingVoiceTyping) return;
-      textareaRef.current?.focus();
-      setOpeningVoiceTyping(true);
-      try {
-        await invoke<void>("start_voice_typing");
-      } catch (error) {
-        console.error("Unable to open Windows voice typing:", error);
-        toast.error(String(error));
-      } finally {
-        setOpeningVoiceTyping(false);
-      }
-      return;
-    }
-    if (isListening) {
-      stopVoiceInput();
-      return;
-    }
-    startVoiceInput();
+  function stopVoiceInput() {
+    return voiceRef.current?.stop();
   }
 
+  function handleMicClick() {
+    if (isListening) {
+      void stopVoiceInput();
+      return;
+    }
+    textareaRef.current?.focus();
+    const capture = new LocalVoiceCapture({
+      status: (status) => {
+        setVoiceStatus(status);
+        if (status === "idle") setInterimTranscript("");
+      },
+      update: ({ partial, finalText }) => {
+        if (finalText) {
+          const spacer = draftRef.current.trim() ? " " : "";
+          draftRef.current += spacer + finalText;
+          setText(draftRef.current);
+          requestAnimationFrame(() => {
+            if (textareaRef.current) resizeTextarea(textareaRef.current);
+          });
+        }
+        setInterimTranscript(partial);
+      },
+      error: (message) => toast.error(message),
+    });
+    voiceRef.current = capture;
+    void capture.start();
+  }
   const addImageFiles = useCallback(
     async (files: FileList | File[]) => {
       const toAdd: File[] = [];
@@ -740,20 +645,29 @@ function ChatInput() {
     refreshStudios();
   }, [refreshStudios, showStudioPicker]);
 
-  function handleSubmit() {
-    if (isListening) stopVoiceInput();
-    const trimmed = text.trim();
-    if (!trimmed && attachments.length === 0) return;
-    if (isBusy) return;
-    const images =
-      attachments.length > 0
-        ? attachments.map((a) => ({ mime: a.mime, url: a.dataUrl, filename: a.filename }))
-        : undefined;
-    sendMessage.mutate({ text: trimmed || " ", images, skill: selectedSkill ?? undefined });
-    setText("");
-    setAttachments([]);
-    setSelectedSkill(null);
-    if (textareaRef.current) textareaRef.current.style.height = "auto";
+  async function handleSubmit() {
+    if (isBusy || submittingRef.current) return;
+    submittingRef.current = true;
+    const sessionAtSubmit = activeSessionId;
+    try {
+      if (isListening && !(await stopVoiceInput())) return;
+      if (currentSessionRef.current !== sessionAtSubmit) return;
+      const trimmed = draftRef.current.trim();
+      if (!trimmed && attachments.length === 0) return;
+      if (isBusy) return;
+      const images =
+        attachments.length > 0
+          ? attachments.map((a) => ({ mime: a.mime, url: a.dataUrl, filename: a.filename }))
+          : undefined;
+      sendMessage.mutate({ text: trimmed || " ", images, skill: selectedSkill ?? undefined });
+      draftRef.current = "";
+      setText("");
+      setAttachments([]);
+      setSelectedSkill(null);
+      if (textareaRef.current) textareaRef.current.style.height = "auto";
+    } finally {
+      submittingRef.current = false;
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -1247,7 +1161,7 @@ function ChatInput() {
           </button>
           <button
             onClick={handleMicClick}
-            disabled={!speechSupported || openingVoiceTyping}
+            disabled={!speechSupported || voiceStatus === "finishing"}
             className={`mt-0.5 shrink-0 p-0.5 transition-colors ${isListening ? "text-danger-foreground" : "text-muted-foreground/60 hover:text-foreground"} disabled:cursor-not-allowed disabled:opacity-30`}
             title={isListening ? "Stop voice input" : "Voice input"}
           >
@@ -1271,6 +1185,7 @@ function ChatInput() {
             ref={textareaRef}
             value={text}
             onChange={(e) => {
+              draftRef.current = e.target.value;
               setText(e.target.value);
               resizeTextarea(e.target);
             }}
@@ -1293,8 +1208,18 @@ function ChatInput() {
             rows={1}
             className="max-h-40 min-h-[20px] flex-1 resize-none bg-transparent text-[13px] leading-relaxed placeholder:text-muted-foreground/50 focus:outline-none"
           />
-          <SendButton text={text} hasAttachments={attachments.length > 0} onSend={handleSubmit} />
+          <SendButton
+            text={text || interimTranscript}
+            hasAttachments={attachments.length > 0}
+            onSend={handleSubmit}
+          />
         </div>
+        {voiceStatus === "starting" && (
+          <div className="mt-1 text-xs text-muted-foreground">Starting microphone…</div>
+        )}
+        {voiceStatus === "finishing" && (
+          <div className="mt-1 text-xs text-muted-foreground">Finishing transcription…</div>
+        )}
         {isListening && interimTranscript && (
           <div className="px-3 pb-2 text-[11px] text-muted-foreground/80">
             Listening… {interimTranscript}

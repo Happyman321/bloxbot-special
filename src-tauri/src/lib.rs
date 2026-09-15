@@ -30,8 +30,13 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .manage(opencode_state)
         .manage(vscode_bridge_state)
+        .manage(voice::VoiceState::default())
         .invoke_handler(tauri::generate_handler![
-            voice::start_voice_typing,
+            voice::voice_prepare,
+            voice::voice_start,
+            voice::voice_audio,
+            voice::voice_finish,
+            voice::voice_cancel,
             opencode::get_opencode_info,
             changes::read_studio_capture,
             opencode::list_roblox_studios,
@@ -52,6 +57,12 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            let voice_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) = voice::voice_prepare(voice_handle.clone(), voice_handle.state::<voice::VoiceState>()).await {
+                    log::warn!("Voice model warmup failed: {error}");
+                }
+            });
             // ── Application menu ──────────────────────────────────
             let app_submenu = SubmenuBuilder::new(app, "BloxBot")
                 .about(None)
@@ -159,6 +170,7 @@ pub fn run() {
                     .clone();
                 let handle = window.app_handle().clone();
                 tauri::async_runtime::block_on(async {
+                    voice::shutdown(&handle.state::<voice::VoiceState>()).await;
                     opencode::stop_all(&state, &handle).await;
                 });
                 window.app_handle().exit(0);

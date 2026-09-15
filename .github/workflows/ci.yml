@@ -75,6 +75,9 @@ jobs:
       - name: Run tests
         run: pnpm test
 
+      - name: Test bundled local speech engine
+        run: pnpm test:voice
+
       # ── Download and bundle Node.js runtime ───────────────────────────
 
       - name: Download Node.js
