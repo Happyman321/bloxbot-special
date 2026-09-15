@@ -329,7 +329,9 @@ function ChatInput() {
   const dragCounterRef = useRef(0);
   const rejectTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const speechSupported = useMemo(() => getSpeechRecognitionConstructor() !== null, []);
+  const windowsVoiceTyping = useMemo(() => /Windows/i.test(navigator.userAgent), []);
+  const [openingVoiceTyping, setOpeningVoiceTyping] = useState(false);
+  const speechSupported = windowsVoiceTyping || getSpeechRecognitionConstructor() !== null;
   const resizeTextarea = useCallback((el: HTMLTextAreaElement) => {
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
@@ -420,7 +422,21 @@ function ChatInput() {
     }
   }, [resizeTextarea]);
 
-  function handleMicClick() {
+  async function handleMicClick() {
+    if (windowsVoiceTyping) {
+      if (openingVoiceTyping) return;
+      textareaRef.current?.focus();
+      setOpeningVoiceTyping(true);
+      try {
+        await invoke<void>("start_voice_typing");
+      } catch (error) {
+        console.error("Unable to open Windows voice typing:", error);
+        toast.error(String(error));
+      } finally {
+        setOpeningVoiceTyping(false);
+      }
+      return;
+    }
     if (isListening) {
       stopVoiceInput();
       return;
@@ -1231,7 +1247,7 @@ function ChatInput() {
           </button>
           <button
             onClick={handleMicClick}
-            disabled={!speechSupported}
+            disabled={!speechSupported || openingVoiceTyping}
             className={`mt-0.5 shrink-0 p-0.5 transition-colors ${isListening ? "text-danger-foreground" : "text-muted-foreground/60 hover:text-foreground"} disabled:cursor-not-allowed disabled:opacity-30`}
             title={isListening ? "Stop voice input" : "Voice input"}
           >

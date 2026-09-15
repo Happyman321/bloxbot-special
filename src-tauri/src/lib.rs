@@ -4,6 +4,7 @@ mod opencode;
 mod paths;
 mod skills;
 mod vscode_bridge;
+mod voice;
 
 use opencode::SharedOpenCodeState;
 use std::sync::Arc;
@@ -30,6 +31,7 @@ pub fn run() {
         .manage(opencode_state)
         .manage(vscode_bridge_state)
         .invoke_handler(tauri::generate_handler![
+            voice::start_voice_typing,
             opencode::get_opencode_info,
             changes::read_studio_capture,
             opencode::list_roblox_studios,

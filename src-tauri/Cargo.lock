@@ -310,7 +310,7 @@ dependencies = [
 
 [[package]]
 name = "bloxbot"
-version = "8.2.4"
+version = "8.2.5"
 dependencies = [
  "dirs",
  "log",
@@ -324,6 +324,7 @@ dependencies = [
  "tauri-plugin-shell",
  "tauri-plugin-store",
  "tokio",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

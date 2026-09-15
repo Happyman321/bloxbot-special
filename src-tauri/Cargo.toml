@@ -1,6 +1,6 @@
 [package]
 name = "bloxbot"
-version = "8.2.4"
+version = "8.2.5"
 description = "AI-assisted Roblox development made easy"
 authors = ["BloxBot"]
 license = "MIT"
@@ -28,3 +28,6 @@ reqwest = { version = "0.13" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
