@@ -1220,9 +1220,9 @@ function ChatInput() {
         {voiceStatus === "finishing" && (
           <div className="mt-1 text-xs text-muted-foreground">Finishing transcription…</div>
         )}
-        {isListening && interimTranscript && (
+        {voiceStatus === "listening" && (
           <div className="px-3 pb-2 text-[11px] text-muted-foreground/80">
-            Listening… {interimTranscript}
+            Recording — click the mic to stop. {interimTranscript}
           </div>
         )}
       </div>

@@ -1,7 +1,7 @@
 {
   "name": "bloxbot",
   "private": true,
-  "version": "8.2.6",
+  "version": "8.2.7",
   "type": "module",
   "license": "MIT",
   "author": "BloxBot",

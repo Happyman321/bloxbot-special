@@ -11,7 +11,7 @@ use tokio::sync::Mutex;
 pub struct VoiceState(Mutex<Option<Worker>>);
 
 struct Worker {
-    _child: Child,
+    child: Child,
     input: ChildStdin,
     output: BufReader<ChildStdout>,
 }
@@ -92,7 +92,7 @@ impl Worker {
                 .ok_or("Voice output pipe is unavailable")?,
         );
         let mut worker = Self {
-            _child: child,
+            child,
             input,
             output,
         };
@@ -114,6 +114,8 @@ impl Worker {
             .await
             .map_err(|e| e.to_string())?;
         if count == 0 {
+            let status = self.child.wait().await.map_err(|e| e.to_string())?;
+            log::error!("Local voice worker exited: {status}");
             return Err("Voice engine stopped. Click the microphone to restart it.".into());
         }
         let result: Value =
@@ -149,6 +151,16 @@ async fn request(
         return Err("Invalid voice session".into());
     }
     let mut guard = state.0.lock().await;
+    // A warmed worker can exit while idle. Restart it before beginning a new
+    // recording instead of failing the user's first microphone click.
+    if value.get("op").and_then(Value::as_str) == Some("start") {
+        if let Some(worker) = guard.as_mut() {
+            if let Some(status) = worker.child.try_wait().map_err(|e| e.to_string())? {
+                log::warn!("Restarting idle voice worker after exit: {status}");
+                *guard = None;
+            }
+        }
+    }
     if guard.is_none() {
         *guard = Some(Worker::spawn(app).await?);
     }

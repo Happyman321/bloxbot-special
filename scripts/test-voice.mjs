@@ -21,7 +21,7 @@ if (!data || hash(data) !== expectedHash) {
   assert.equal(hash(data), expectedHash);
   await writeFile(fixture, data);
 }
-const worker = spawn(process.execPath, ["src-tauri/resources/voice/worker.cjs"], { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
+const worker = spawn(process.env.VOICE_NODE || process.execPath, [process.env.VOICE_WORKER || "src-tauri/resources/voice/worker.cjs"], { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
 const lines = readline.createInterface({ input: worker.stdout })[Symbol.asyncIterator]();
 let diagnostics = "";
 worker.stderr.on("data", (data) => { diagnostics = (diagnostics + data).slice(-4000); });
@@ -46,10 +46,17 @@ try {
     const started = performance.now();
     let text = "";
     let partials = 0;
+    let firstPartialAudioSeconds;
+    const audioRequestTimes = [];
     for (let i = 0; i < wave.samples.length; i += 2048) {
+      const requestStarted = performance.now();
       const result = await request({ op: "audio", session, sampleRate: wave.sampleRate, samples: Array.from(wave.samples.subarray(i, i + 2048)) });
+      audioRequestTimes.push(performance.now() - requestStarted);
       assert.ok(!result.error, result.error);
-      if (result.partial) partials++;
+      if (result.partial) {
+        partials++;
+        firstPartialAudioSeconds ??= Math.min(i + 2048, wave.samples.length) / wave.sampleRate;
+      }
       if (result.finalText) text += ` ${result.finalText}`;
     }
     const final = await request({ op: "finish", session });
@@ -57,11 +64,49 @@ try {
     assert.equal(normalize(text), expected);
     assert.ok(partials > 1, "Expected live partial text before recording ends");
     console.log(`${session}: ${partials} partial updates; ${(wave.samples.length / wave.sampleRate).toFixed(2)}s human speech decoded in ${((performance.now() - started) / 1000).toFixed(2)}s, transcript matches reference.`);
+    audioRequestTimes.sort((a, b) => a - b);
+    console.log(`First partial at ${firstPartialAudioSeconds.toFixed(3)}s of input audio; p95 audio request ${audioRequestTimes[Math.floor(audioRequestTimes.length * 0.95)].toFixed(1)}ms.`);
   }
   await request({ op: "start", session: "silence" });
   await request({ op: "audio", session: "silence", sampleRate: 16000, samples: Array(16000).fill(0) });
   assert.equal((await request({ op: "finish", session: "silence" })).finalText, "");
   console.log("Silence produces no invented text; repeated sessions and stale cancellation passed.");
+  await request({ op: "start", session: "pauses" });
+  let longText = "";
+  for (let round = 0; round < 4; round++) {
+    for (let i = 0; i < wave.samples.length; i += 2048) {
+      const result = await request({ op: "audio", session: "pauses", sampleRate: wave.sampleRate, samples: Array.from(wave.samples.subarray(i, i + 2048)) });
+      assert.ok(!result.error, result.error);
+      if (result.finalText) longText += ` ${result.finalText}`;
+    }
+    for (let i = 0; i < 32; i++) {
+      const result = await request({ op: "audio", session: "pauses", sampleRate: 16000, samples: Array(2048).fill(0) });
+      assert.ok(!result.error, result.error);
+      if (result.finalText) longText += ` ${result.finalText}`;
+    }
+    console.log(`Long recording: speech/pause cycle ${round + 1} passed.`);
+  }
+  const longFinal = await request({ op: "finish", session: "pauses" });
+  assert.ok(!longFinal.error);
+  longText += ` ${longFinal.finalText}`;
+  const actualWords = normalize(longText).split(" ");
+  const expectedWords = Array(4).fill(expected).join(" ").split(" ");
+  // Endpoint context can change individual ASR words. Check bounded word error
+  // as well as every sentence boundary so lost utterances still fail this test.
+  let distances = Array.from({ length: expectedWords.length + 1 }, (_, i) => i);
+  for (let i = 0; i < actualWords.length; i++) {
+    const next = [i + 1];
+    for (let j = 0; j < expectedWords.length; j++) {
+      next.push(Math.min(next[j] + 1, distances[j + 1] + 1,
+        distances[j] + (actualWords[i] === expectedWords[j] ? 0 : 1)));
+    }
+    distances = next;
+  }
+  const wordErrorRate = distances[expectedWords.length] / expectedWords.length;
+  assert.ok(wordErrorRate <= 0.05, `Long recording lost or changed too many words: ${longText}`);
+  assert.equal(normalize(longText).match(/after early nightfall/g)?.length, 4);
+  assert.equal(normalize(longText).match(/quarter of the brothels/g)?.length, 4);
+  console.log(`Four speech/pause cycles retained all sentence boundaries; word error ${(wordErrorRate * 100).toFixed(1)}%.`);
 } finally {
   worker.stdin.end();
   worker.kill();

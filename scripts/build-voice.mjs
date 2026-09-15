@@ -27,10 +27,10 @@ for (const [name, directory] of [["sherpa-onnx-node", packageRoot], [nativeName,
   });
 }
 
-const revision = "237e551abd7a411ef92d3595454d9f6ab5fe7d6c";
-const modelUrl = `https://huggingface.co/csukuangfj2/sherpa-onnx-nemotron-speech-streaming-en-0.6b-160ms-int8-2026-04-25/resolve/${revision}`;
+const revision = "52056fdc070914a48dcd68b31b44d6a6f5b85902";
+const modelUrl = `https://huggingface.co/csukuangfj2/sherpa-onnx-nemotron-speech-streaming-en-0.6b-560ms-int8-2026-04-25/resolve/${revision}`;
 const models = [
-  ["encoder.int8.onnx", "encoder.onnx", "71111f61b18e1e65e01e369434a5c0434868d2f44892742ae54240600c681209"],
+  ["encoder.int8.onnx", "encoder.onnx", "7d932213491ad355c6e5576705dc3494731a52af87d7a1b954559340147909d8"],
   ["decoder.int8.onnx", "decoder.onnx", "0be9702c2f427a2b6bb241d298e0d3836a558de1f5b9fd3018f1cce6e2b3fa98"],
   ["joiner.int8.onnx", "joiner.onnx", "a35eac38a22ebceb04d230ed7afe0d68f446ba6914a036b97f14fece95967e23"],
   ["tokens.txt", "tokens.txt", "dc0b4584ab2e4ddbf888425c076c61b736e7356a015250db7d307e6f1a8188ff"],

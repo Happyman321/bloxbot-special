@@ -18,6 +18,13 @@ const recognizer = new OnlineRecognizer({
 });
 let stream;
 let session;
+const diagnostics = process.env.BLOXBOT_VOICE_DIAGNOSTICS === "1";
+let sampleCount = 0;
+let peak = 0;
+let lastReport = 0;
+const diagnostic = (message) => {
+  if (diagnostics) console.error(`[voice] ${message}`);
+};
 const reply = (value) => process.stdout.write(`${JSON.stringify(value)}\n`);
 const decode = () => {
   while (recognizer.isReady(stream)) recognizer.decode(stream);
@@ -30,6 +37,10 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
     if (request.op === "start") {
       stream = recognizer.createStream();
       session = request.session;
+      sampleCount = 0;
+      peak = 0;
+      lastReport = 0;
+      diagnostic("Recording started");
       reply({ partial: "", finalText: "" });
       return;
     }
@@ -48,6 +59,13 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
         throw new Error("Invalid microphone audio.");
       }
       stream.acceptWaveform({ sampleRate: request.sampleRate, samples: Float32Array.from(request.samples) });
+      sampleCount += request.samples.length;
+      for (const sample of request.samples) peak = Math.max(peak, Math.abs(sample));
+      if (diagnostics && Date.now() - lastReport > 5000) {
+        diagnostic(`Audio received: rate=${request.sampleRate}, samples=${sampleCount}, peak=${peak.toFixed(5)}`);
+        lastReport = Date.now();
+        peak = 0;
+      }
       const text = decode();
       if (recognizer.isEndpoint(stream)) {
         recognizer.reset(stream);
@@ -58,6 +76,7 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
       return;
     }
     if (request.op === "finish") {
+      diagnostic(`Recording finished: samples=${sampleCount}`);
       stream.acceptWaveform({ sampleRate: 16000, samples: new Float32Array(8000) });
       stream.inputFinished();
       const text = decode();

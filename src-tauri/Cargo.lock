@@ -310,7 +310,7 @@ dependencies = [
 
 [[package]]
 name = "bloxbot"
-version = "8.2.6"
+version = "8.2.7"
 dependencies = [
  "dirs",
  "log",
