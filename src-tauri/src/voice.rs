@@ -23,6 +23,22 @@ pub struct VoiceUpdate {
     final_text: String,
 }
 
+// Node's entry-point resolver rejects Windows verbatim paths returned by Tauri.
+// Keep UNC paths valid when removing that prefix.
+fn node_path(path: &std::path::Path) -> std::path::PathBuf {
+    #[cfg(windows)]
+    {
+        let text = path.to_string_lossy();
+        if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+            return std::path::PathBuf::from(format!(r"\\{rest}"));
+        }
+        if let Some(rest) = text.strip_prefix(r"\\?\") {
+            return std::path::PathBuf::from(rest);
+        }
+    }
+    path.to_owned()
+}
+
 impl Worker {
     async fn spawn(app: &tauri::AppHandle) -> Result<Self, String> {
         let resources = app.path().resource_dir().map_err(|e| e.to_string())?;
@@ -42,18 +58,29 @@ impl Worker {
         } else {
             "node"
         });
-        let mut command = Command::new(node);
+        let mut command = Command::new(node_path(&node));
         command
-            .arg(script)
+            .arg(node_path(&script))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .kill_on_drop(true);
         #[cfg(windows)]
         command.creation_flags(0x08000000); // CREATE_NO_WINDOW
         let mut child = command
             .spawn()
             .map_err(|e| format!("Cannot start voice engine: {e}"))?;
+        if let Some(stderr) = child.stderr.take() {
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    log::warn!(
+                        "Voice engine: {}",
+                        line.chars().take(1000).collect::<String>()
+                    );
+                }
+            });
+        }
         let input = child
             .stdin
             .take()
@@ -75,6 +102,7 @@ impl Worker {
         if ready.get("ready").and_then(Value::as_bool) != Some(true) {
             return Err("Voice model could not be loaded. Reinstall BloxBot to restore it.".into());
         }
+        log::info!("Local voice model ready");
         Ok(worker)
     }
 
@@ -217,6 +245,23 @@ pub async fn shutdown(state: &VoiceState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[cfg(windows)]
+    fn normalizes_tauri_paths_for_node_without_breaking_unc_paths() {
+        use std::path::{Path, PathBuf};
+        assert_eq!(
+            node_path(Path::new(r"\\?\C:\Program Files\BloxBot\worker.cjs")),
+            PathBuf::from(r"C:\Program Files\BloxBot\worker.cjs")
+        );
+        assert_eq!(
+            node_path(Path::new(r"\\?\UNC\server\share\worker.cjs")),
+            PathBuf::from(r"\\server\share\worker.cjs")
+        );
+        assert_eq!(
+            node_path(Path::new(r"C:\BloxBot\worker.cjs")),
+            PathBuf::from(r"C:\BloxBot\worker.cjs")
+        );
+    }
     #[test]
     fn rejects_invalid_audio_before_sending_to_native_engine() {
         assert!(validate_audio(&[0.0; 2048], 16000).is_ok());
